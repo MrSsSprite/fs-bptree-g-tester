@@ -1,3 +1,5 @@
 # Ignore Object & Binary
 obj/
 bin/
+
+compile_commands.json
