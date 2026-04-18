@@ -3,7 +3,9 @@ include ../../config.mk
 TARGET_NAME := fflush
 TARGET      := $(BIN_DIR)/$(TARGET_NAME)
 
-SRCS :=
+TU_SRC_DIR := src
+
+SRCS := $(TU_SRC_DIR)/main.c
 OBJS := $(SRCS:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o)
 
 .PHONY: all clean
