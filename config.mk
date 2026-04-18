@@ -10,3 +10,6 @@ TEST_DIR   := $(ROOT_DIR)/test
 OBJ_DIR    := $(ROOT_DIR)/obj
 BIN_DIR    := $(ROOT_DIR)/bin
 RESULT_DIR := $(ROOT_DIR)/result
+
+INCLDUES = $(UNITY_DIR)/src/
+CPPFLAGS = $(addprefix -I, $(INCLDUES))
