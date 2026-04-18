@@ -19,9 +19,18 @@ CORE_H_DIRS := $(shell find $(CORE_DIR) -name "*.h" -exec dirname {} + | sort -u
 INCLDUES = $(UNITY_DIR)/src/ $(CORE_H_DIRS)
 CPPFLAGS = $(addprefix -I, $(INCLDUES))
 
+CORE_SRCS := $(shell find $(SRC_DIR) -name "*.c")
+CORE_OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/core/%.o, $(CORE_SRCS))
+$(OBJ_DIR)/core/%.o: $(SRC_DIR)/%.c
+	@echo "Compiling core: $<"
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
 UNITY_SRC := $(UNITY_DIR)/src/unity.c
 UNITY_OBJ := $(OBJ_DIR)/unity.o
 $(UNITY_OBJ): $(UNITY_SRC)
 	@echo "Building Unity framework..."
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+PREREQ_OBJS := $(CORE_OBJS) $(UNITY_OBJ)
