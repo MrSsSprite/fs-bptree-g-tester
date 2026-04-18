@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "unity.h"
+#include "header.h"
+#include "unity_internals.h"
 
 void setUp(void) { }
 
@@ -10,6 +12,8 @@ int main(void)
 {
    puts("Test Unit: fflush");
    UNITY_BEGIN();
+
+   RUN_TEST(test_direct_flush);
 
    return UNITY_END();
 }

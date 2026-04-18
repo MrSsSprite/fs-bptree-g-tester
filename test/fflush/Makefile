@@ -5,8 +5,9 @@ TARGET      := $(BIN_DIR)/$(TARGET_NAME)
 
 TU_SRC_DIR := src
 
-SRCS += $(TU_SRC_DIR)/main.c
-OBJS := $(SRCS:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o) $(UNITY_OBJ)
+SRCS += main.c header.c
+SRCS_PATH = $(addprefix $(TU_SRC_DIR)/, $(SRCS))
+OBJS := $(SRCS_PATH:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o) $(PREREQ_OBJS)
 
 .PHONY: all clean
 
