@@ -1,3 +1,6 @@
 [submodule "core"]
 	path = core
 	url = https://github.com/MrSsSprite/fs-bptree-g.git
+[submodule "deps/unity"]
+	path = deps/unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
