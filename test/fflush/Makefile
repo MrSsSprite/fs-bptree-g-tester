@@ -5,8 +5,8 @@ TARGET      := $(BIN_DIR)/$(TARGET_NAME)
 
 TU_SRC_DIR := src
 
-SRCS := $(TU_SRC_DIR)/main.c
-OBJS := $(SRCS:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o)
+SRCS += $(TU_SRC_DIR)/main.c
+OBJS := $(SRCS:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o) $(UNITY_OBJ)
 
 .PHONY: all clean
 
