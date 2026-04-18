@@ -16,7 +16,7 @@ $(TARGET): $(OBJS)
 
 $(OBJ_DIR)/$(TARGET_NAME)/%.o: %.c
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(OBJ_DIR)/$(TARGET_NAME) $(TARGET)
