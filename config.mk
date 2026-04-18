@@ -1,3 +1,6 @@
+# Force the default goal to be 'all', even if other rules appear first
+.DEFAULT_GOAL := all
+
 # Get the directory where this config.mk resides
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
@@ -13,3 +16,10 @@ RESULT_DIR := $(ROOT_DIR)/result
 
 INCLDUES = $(UNITY_DIR)/src/
 CPPFLAGS = $(addprefix -I, $(INCLDUES))
+
+UNITY_SRC := $(UNITY_DIR)/src/unity.c
+UNITY_OBJ := $(OBJ_DIR)/unity.o
+$(UNITY_OBJ): $(UNITY_SRC)
+	@echo "Building Unity framework..."
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -c $< -o $@
