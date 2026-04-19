@@ -6,7 +6,7 @@ ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
 # Define global variables using the root path
 CC         := gcc
-CFLAGS     := -Wall -Wextra
+CFLAGS     := -Wall -Wextra -g
 UNITY_DIR  := $(ROOT_DIR)/deps/unity
 CORE_DIR   := $(ROOT_DIR)/core
 SRC_DIR    := $(CORE_DIR)/src
