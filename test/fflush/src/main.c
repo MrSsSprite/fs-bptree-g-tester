@@ -13,7 +13,7 @@ int main(void)
    puts("Test Unit: fflush");
    UNITY_BEGIN();
 
-   RUN_TEST(test_direct_flush);
+   RUN_TEST(test_bptr_create);
 
    return UNITY_END();
 }
