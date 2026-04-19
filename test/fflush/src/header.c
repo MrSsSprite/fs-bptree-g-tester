@@ -4,6 +4,8 @@
 #include "bptree.h"
 #include "bptr_internal.h"
 #include <stdio.h>
+#include <sys/stat.h>
+#include <errno.h>
 /*--------------------------- Private Includes END ---------------------------*/
 
 
@@ -24,6 +26,7 @@ int cmp_u32(const void *lhs, const void *rhs)
 { return (const uint32_t *)lhs - (const uint32_t *)rhs; }
 int cmp_u64(const void *lhs, const void *rhs)
 { return (const uint64_t *)lhs - (const uint64_t *)rhs; }
+static void bptr_path(char *dest, size_t sz, const char *filename);
 void _bptr_create(struct bptr_temp *template);
 void _bptr_load_check(struct bptr_temp *template);
 /*-------------------- Private Function Declarations END ---------------------*/
@@ -59,6 +62,12 @@ void test_bptr_create(void)
    const char *mes[sizeof(temp_matrix)/sizeof(*temp_matrix)] =
     { "\tLite Templates:", "\tNorm Templates:" };
 
+   // Ensure bptr_files directory exists
+   if (mkdir("bptr_files", 0755) != 0 && errno != EEXIST)
+   {
+      TEST_FAIL_MESSAGE("Failed to create bptr_files directory");
+   }
+
    // Initialize Tree
    puts("Initialize Tree:");
    for (size_t ti = 0; ti < sizeof(temp_matrix)/sizeof(*temp_matrix); ti++)
@@ -81,10 +90,12 @@ void test_bptr_create(void)
       puts(mes[ti]);
       for (size_t i = 0; i < temp_matrix_sz[ti]; i++)
        {
+         char path[256];
          printf("\t\tStarting Test: %s...", temp_it[i].fnm);
          _bptr_load_check(temp_it + i);
          puts("Succeeded.");
-         TEST_ASSERT_MESSAGE(remove(temp_it[i].fnm) == 0,
+         bptr_path(path, sizeof(path), temp_it[i].fnm);
+         TEST_ASSERT_MESSAGE(remove(path) == 0,
                              "file remove failure");
        }
     }
@@ -93,9 +104,16 @@ void test_bptr_create(void)
 
 
 /*---------------------------- Private Functions -----------------------------*/
+static void bptr_path(char *dest, size_t sz, const char *filename)
+{
+   snprintf(dest, sz, "bptr_files/%s", filename);
+}
+
 void _bptr_create(struct bptr_temp *template)
 {
-   struct bptr *bptr = bptr_init(template->fnm, template->is_lite,
+   char path[256];
+   bptr_path(path, sizeof(path), template->fnm);
+   struct bptr *bptr = bptr_init(path, template->is_lite,
                                  template->node_sz, template->key_sz,
                                  template->val_sz, template->cmp);
    TEST_ASSERT(bptr);
@@ -106,7 +124,9 @@ void _bptr_create(struct bptr_temp *template)
 
 void _bptr_load_check(struct bptr_temp *template)
 {
-   struct bptr *bptr = bptr_load(template->fnm, template->cmp);
+   char path[256];
+   bptr_path(path, sizeof(path), template->fnm);
+   struct bptr *bptr = bptr_load(path, template->cmp);
 
    TEST_ASSERT_MESSAGE(bptr, "bptr_load failure");
    TEST_ASSERT_EQUAL(bptr->compare, template->cmp);
