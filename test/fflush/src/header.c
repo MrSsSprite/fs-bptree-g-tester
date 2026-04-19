@@ -101,7 +101,7 @@ void _bptr_create(struct bptr_temp *template)
 
 void _bptr_load_check(struct bptr_temp *template)
 {
-   struct bptr *bptr = bptr_load(template->fnm);
+   struct bptr *bptr = bptr_load(template->fnm, template->cmp);
 
    TEST_ASSERT_MESSAGE(bptr, "bptr_load failure");
    TEST_ASSERT_EQUAL(bptr->compare, template->cmp);
