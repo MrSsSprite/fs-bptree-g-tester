@@ -1,13 +1,17 @@
+/*----------------------------- Private Includes -----------------------------*/
 #include <stdio.h>
 #include "unity.h"
 #include "header.h"
 #include "unity_internals.h"
+/*--------------------------- Private Includes END ---------------------------*/
 
+/*------------------------------- Unity Setup --------------------------------*/
 void setUp(void) { }
-
 void tearDown(void) { }
+/*----------------------------- Unity Setup END ------------------------------*/
 
 
+/*----------------------------------- MAIN -----------------------------------*/
 int main(void)
 {
    puts("Test Unit: fflush");
@@ -17,3 +21,4 @@ int main(void)
 
    return UNITY_END();
 }
+/*--------------------------------- MAIN END ---------------------------------*/

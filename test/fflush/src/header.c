@@ -1,10 +1,13 @@
+/*----------------------------- Private Includes -----------------------------*/
 #include "header.h"
 #include "unity.h"
 #include "bptree.h"
 #include "bptr_internal.h"
 #include <stdio.h>
+/*--------------------------- Private Includes END ---------------------------*/
 
 
+/*----------------------------- Private Structs ------------------------------*/
 struct bptr_temp
 {
    const char *fnm;
@@ -13,15 +16,19 @@ struct bptr_temp
    uint16_t key_sz, val_sz;
    int (*cmp)(const void *, const void *);
 };
+/*--------------------------- Private Structs END ----------------------------*/
 
 
+/*---------------------- Private Function Declarations -----------------------*/
 int cmp_u32(const void *lhs, const void *rhs)
 { return (const uint32_t *)lhs - (const uint32_t *)rhs; }
 int cmp_u64(const void *lhs, const void *rhs)
 { return (const uint64_t *)lhs - (const uint64_t *)rhs; }
 void _bptr_create(struct bptr_temp *template);
+/*-------------------- Private Function Declarations END ---------------------*/
 
 
+/*---------------------------- Private Variables -----------------------------*/
 struct bptr_temp lite_temps[] =
 {
    { "lite_DEF_u32_u32.bptr", 1, BPTR_NODE_BYTE_DEFAULT, sizeof(uint32_t), sizeof(uint32_t), cmp_u32 },
@@ -36,8 +43,10 @@ struct bptr_temp norm_temps[] =
    { "lite_1024_u64_u64.bptr", 0, 1024, sizeof(uint64_t), sizeof(uint64_t), cmp_u64 },
    { "lite_2048_u64_u64.bptr", 0, 2048, sizeof(uint64_t), sizeof(uint64_t), cmp_u64 },
 };
+/*-------------------------- Private Variables END ---------------------------*/
 
 
+/*----------------------------- Public Functions -----------------------------*/
 void test_bptr_create(void)
 {
    puts("\tLite Templates:");
@@ -57,8 +66,10 @@ void test_bptr_create(void)
       TEST_ASSERT(remove(norm_temps[i].fnm) == 0);
     }
 }
+/*--------------------------- Public Functions END ---------------------------*/
 
 
+/*---------------------------- Private Functions -----------------------------*/
 void _bptr_create(struct bptr_temp *template)
 {
    struct bptr *bptr = bptr_init(template->fnm, template->is_lite,
@@ -67,3 +78,4 @@ void _bptr_create(struct bptr_temp *template)
    TEST_ASSERT(bptr);
    TEST_ASSERT(bptr_unload(bptr) == BPTR_E_SUCCESS);
 }
+/*-------------------------- Private Functions END ---------------------------*/
