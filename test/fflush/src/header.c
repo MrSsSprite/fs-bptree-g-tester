@@ -60,6 +60,7 @@ void test_bptr_create(void)
     { "\tLite Templates:", "\tNorm Templates:" };
 
    // Initialize Tree
+   puts("Initialize Tree:");
    for (size_t ti = 0; ti < sizeof(temp_matrix)/sizeof(*temp_matrix); ti++)
     {
       struct bptr_temp *temp_it = temp_matrix[ti];
@@ -73,13 +74,16 @@ void test_bptr_create(void)
     }
 
    // Load and check
+   puts("Load Tree:");
    for (size_t ti = 0; ti < sizeof(temp_matrix)/sizeof(*temp_matrix); ti++)
     {
       struct bptr_temp *temp_it = temp_matrix[ti];
       puts(mes[ti]);
       for (size_t i = 0; i < temp_matrix_sz[ti]; i++)
        {
+         printf("\t\tStarting Test: %s...", temp_it[i].fnm);
          _bptr_load_check(temp_it + i);
+         puts("Succeeded.");
          TEST_ASSERT_MESSAGE(remove(temp_it[i].fnm) == 0,
                              "file remove failure");
        }
@@ -95,7 +99,8 @@ void _bptr_create(struct bptr_temp *template)
                                  template->node_sz, template->key_sz,
                                  template->val_sz, template->cmp);
    TEST_ASSERT(bptr);
-   TEST_ASSERT(bptr_unload(bptr) == BPTR_E_SUCCESS);
+   TEST_ASSERT_MESSAGE(bptr_unload(bptr) == BPTR_E_SUCCESS,
+                       "bptr_unload failure");
 }
 
 
