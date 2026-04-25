@@ -16,13 +16,21 @@ BIN_DIR    := $(ROOT_DIR)/bin
 RESULT_DIR := $(ROOT_DIR)/result
 
 CORE_H_DIRS := $(shell find $(CORE_DIR) -name "*.h" -exec dirname {} + | sort -u)
-INCLDUES = $(UNITY_DIR)/src/ $(CORE_H_DIRS)
+TEST_UTIL_H_DIR := $(TEST_DIR)
+INCLDUES = $(UNITY_DIR)/src $(CORE_H_DIRS) $(TEST_UTIL_H_DIR)
 CPPFLAGS = $(addprefix -I, $(INCLDUES))
 
 CORE_SRCS := $(shell find $(SRC_DIR) -name "*.c")
 CORE_OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/core/%.o, $(CORE_SRCS))
 $(OBJ_DIR)/core/%.o: $(SRC_DIR)/%.c
 	@echo "Compiling core: $<"
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+TEST_UTIL_SRCS := $(wildcard $(TEST_DIR)/*.c)
+TEST_UTIL_OBJS := $(patsubst $(TEST_DIR)/%.c, $(OBJ_DIR)/test_util/%.o, $(TEST_UTIL_SRCS))
+$(OBJ_DIR)/test_util/%.o: $(TEST_DIR)/%.c
+	@echo "Compiling test utility function: $<"
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
@@ -33,4 +41,4 @@ $(UNITY_OBJ): $(UNITY_SRC)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-PREREQ_OBJS := $(CORE_OBJS) $(UNITY_OBJ)
+PREREQ_OBJS := $(CORE_OBJS) $(UNITY_OBJ) $(TEST_UTIL_OBJS)
