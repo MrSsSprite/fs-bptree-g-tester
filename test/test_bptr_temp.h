@@ -22,6 +22,11 @@ extern struct bptr_temp lite_temps[];
 extern size_t lite_temps_sz;
 extern struct bptr_temp norm_temps[];
 extern size_t norm_temps_sz;
+
+extern struct bptr_temp lite_temps_iu[];
+extern size_t lite_temps_iu_sz;
+extern struct bptr_temp norm_temps_iu[];
+extern size_t norm_temps_iu_sz;
 /*--------------------- Public Variable Declarations END ---------------------*/
 
 #endif
