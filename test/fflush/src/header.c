@@ -26,12 +26,6 @@ void test_bptr_create(void)
    const char *mes[sizeof(temp_matrix)/sizeof(*temp_matrix)] =
     { "\tLite Templates:", "\tNorm Templates:" };
 
-   // Ensure bptr_files directory exists
-   if (mkdir("bptr_files", 0755) != 0 && errno != EEXIST)
-   {
-      TEST_FAIL_MESSAGE("Failed to create bptr_files directory");
-   }
-
    // Initialize Tree
    puts("Initialize Tree:");
    for (size_t ti = 0; ti < sizeof(temp_matrix)/sizeof(*temp_matrix); ti++)
