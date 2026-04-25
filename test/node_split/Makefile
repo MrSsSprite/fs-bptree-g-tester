@@ -5,7 +5,7 @@ TARGET_NAME := node_split
 # Test Unit Source Directory
 TU_SRC_DIR := src
 # Source files which need to be compiled
-SRCS +=
+SRCS += main.c
 
 # Auto Expansions (update not required)
 TARGET      := $(BIN_DIR)/$(TARGET_NAME)
