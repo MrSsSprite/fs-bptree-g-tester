@@ -19,6 +19,7 @@ CORE_H_DIRS := $(shell find $(CORE_DIR) -name "*.h" -exec dirname {} + | sort -u
 TEST_UTIL_H_DIR := $(TEST_DIR)
 INCLDUES = $(UNITY_DIR)/src $(CORE_H_DIRS) $(TEST_UTIL_H_DIR)
 CPPFLAGS = $(addprefix -I, $(INCLDUES))
+CPPFLAGS += -DBPTR_TESTING
 
 CORE_SRCS := $(shell find $(SRC_DIR) -name "*.c")
 CORE_OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/core/%.o, $(CORE_SRCS))
