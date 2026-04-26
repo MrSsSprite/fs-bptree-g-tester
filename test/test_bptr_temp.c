@@ -53,9 +53,24 @@ void _val_ers__##S(struct bptr_node *node, size_t idx) \
    _kv_ins_i64__generate(T, S); \
    _kv_ers__generate(T, S);
 
+
+#define _wrapper_tools_i64__generate(T, S) \
+void *_wrapper_tools_i64__##S(int64_t inpt) \
+{ \
+   static T buffer[2]; \
+   static uint_fast8_t buf_it = 0; \
+   buffer[buf_it] = inpt; \
+   buf_it ^= 1; \
+   return &buffer[buf_it ^ 1]; \
+}
+
+
 #define _temp_tools_block(Sk, Sv) (struct bptr_temp_tools) \
-{ .node = { _key_ins_i64__##Sk, _val_ins_i64__##Sv, \
-            _key_ers__##Sk, _val_ers__##Sv} }
+{ \
+   .node = {   _key_ins_i64__##Sk, _val_ins_i64__##Sv, \
+               _key_ers__##Sk, _val_ers__##Sv, \
+               _wrapper_tools_i64__##Sk, _wrapper_tools_i64__##Sv, } \
+}
 #define _temp_tools_block_rpt(S) _temp_tools_block(S, S)
 /*---------------------------- Private Macros END ----------------------------*/
 
@@ -70,6 +85,8 @@ int cmp_u64(const void *lhs, const void *rhs)
 /*---------------------------- Toolbox Functions -----------------------------*/
 _kv_tools_i64__generate(uint32_t, u32);
 _kv_tools_i64__generate(uint64_t, u64);
+_wrapper_tools_i64__generate(uint32_t, u32);
+_wrapper_tools_i64__generate(uint64_t, u64);
 /*-------------------------- Toolbox Functions END ---------------------------*/
 
 

@@ -26,6 +26,8 @@ struct bptr_temp_tools
       void (*val_ins_i64)(struct bptr_node*, int64_t, size_t);
       void (*key_ers)(struct bptr_node*, size_t);
       void (*val_ers)(struct bptr_node*, size_t);
+      void *(*key_wrapper_i64)(int64_t);
+      void *(*val_wrapper_i64)(int64_t);
     } node;
 };
 /*---------------------------- Public Structs END ----------------------------*/
