@@ -11,7 +11,7 @@
 
 
 /*---------------------- Private Function Declarations -----------------------*/
-void test_simp_split_proc(struct bptr_temp *temp);
+void test_simp_split_end(struct bptr_temp *temp);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -20,7 +20,17 @@ void test_simp_split_proc(struct bptr_temp *temp);
 // only one node in the tree
 void test_simp_split(void)
 {
+   struct bptr_temp *test_matrix[] = { lite_temps_iu, norm_temps_iu };
+   size_t test_sz_matrix[] = { lite_temps_iu_sz, norm_temps_iu_sz };
    puts("Test Unit: Simple Node Split (test_simp_split)");
+
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+         test_simp_split_end(test_matrix[m_it] + tp_it);
+    }
 }
 /*------------------------------ Test Units END ------------------------------*/
 
@@ -43,6 +53,13 @@ void test_simp_split_end(struct bptr_temp *temp)
       _bptr_kv_ins_i64(node, temp->tools, i, i * 2, i);
 
    // Split
-   bptr_node_split(bptr, node, -2, -2);
+   TEST_ASSERT_MESSAGE(bptr_node_split(bptr, node,
+                                       temp->tools->node.key_wrapper_i64(-2),
+                                       temp->tools->node.val_wrapper_i64(-2)),
+                       "Failed at Split");
+   TEST_ASSERT_MESSAGE(bptr_node_unload(bptr, node) == 0,
+                       "Failed to unload node");
+   TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0,
+                       "Failed to unload bptr");
 }
 /*--------------------------- Test Proccesses END ----------------------------*/
