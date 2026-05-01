@@ -48,15 +48,16 @@ void test_simp_split_end(struct bptr_temp *temp)
    bptr->root_idx = node->node_idx;
 
    // Fill node
-   temp->tools->node.val_ins_i64(node, -1, 0);
+   temp->tools->node.val_ins_i64(node, 0, 0);
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
-      _bptr_kv_ins_i64(node, temp->tools, i, i * 2, i);
+      _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
 
    // Split
-   TEST_ASSERT_MESSAGE(bptr_node_split(bptr, node,
-                                       temp->tools->node.key_wrapper_i64(-2),
-                                       temp->tools->node.val_wrapper_i64(-2)),
-                       "Failed at Split");
+   TEST_ASSERT_MESSAGE(
+      bptr_node_split(bptr, node,
+                      temp->tools->node.key_wrapper_i64(0xFFFFFFFF),
+                      temp->tools->node.val_wrapper_i64(0xFFFFFFFF)),
+      "Failed at Split");
    TEST_ASSERT_MESSAGE(bptr_node_unload(bptr, node) == 0,
                        "Failed to unload node");
    TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0,
