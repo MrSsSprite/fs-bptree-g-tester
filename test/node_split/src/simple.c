@@ -43,7 +43,7 @@ void test_simp_split_end(struct bptr_temp *temp)
    struct bptr_node *node;
 
    TEST_ASSERT_MESSAGE(bptr, "failed at _bptr_create");
-   node = bptr_node_new(bptr, 1, 0);
+   node = bptr_node_new(bptr, 0);
    TEST_ASSERT_MESSAGE(node, "failed at bptr_node_new");
    node->prev = node->next = 0;
    bptr->root_idx = node->node_idx;
