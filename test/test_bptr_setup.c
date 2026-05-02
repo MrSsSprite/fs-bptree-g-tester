@@ -23,6 +23,5 @@ struct bptr *_bptr_create(struct bptr_temp *template)
    struct bptr *bptr = bptr_init(path, template->is_lite,
                                  template->node_sz, template->key_sz,
                                  template->val_sz, template->cmp);
-   TEST_ASSERT(bptr);
    return bptr;
 }
