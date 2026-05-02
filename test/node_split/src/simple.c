@@ -59,8 +59,25 @@ void test_simp_split_end(struct bptr_temp *temp)
                       temp->tools->node.key_wrapper_i64(0xFFFFFFFF),
                       temp->tools->node.val_wrapper_i64(0xFFFFFFFF)),
       "Failed at Split");
-   TEST_ASSERT_MESSAGE(bptr_node_unload(bptr, node) == 0,
-                       "Failed to unload node");
+   TEST_ASSERT_EQUAL(0, bptr_node_unload(bptr, node));
+
+   /*--------------------- Check Correctness after Split ---------------------*/
+   // TODO: check stats members in bptr
+   // Check Root
+   node = bptr_node_load(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
+   TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "root after split is leaf");
+   TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
+   TEST_ASSERT_EQUAL(1, node->level);
+   TEST_ASSERT_EQUAL(0, node->parent);
+   TEST_ASSERT_EQUAL(0, node->prev);
+   TEST_ASSERT_EQUAL(0, node->next);
+   TEST_ASSERT_BITS(0x3, 0x1, node->flags);
+   TEST_ASSERT_EQUAL(node->key_count, 1);
+
+   TEST_ASSERT(bptr_node_unload(bptr, node));
+   /*------------------- Check Correctness after Split END -------------------*/
+
    TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0,
                        "Failed to unload bptr");
 }
