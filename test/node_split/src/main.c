@@ -17,7 +17,7 @@ int main(void)
    puts("Test Unit: node_split");
    UNITY_BEGIN();
 
-   test_simp_split();
+   RUN_TEST(test_simp_split);
 
    return UNITY_END();
 }
