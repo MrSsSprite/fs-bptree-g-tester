@@ -75,7 +75,7 @@ void test_simp_split_end(struct bptr_temp *temp)
    TEST_ASSERT_BITS(0x3, 0x1, node->flags);
    TEST_ASSERT_EQUAL(1, node->key_count);
 
-   TEST_ASSERT(bptr_node_unload(bptr, node));
+   TEST_ASSERT_EQUAL(0, bptr_node_unload(bptr, node));
    /*------------------- Check Correctness after Split END -------------------*/
 
    TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0,
