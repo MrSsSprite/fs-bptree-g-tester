@@ -13,6 +13,7 @@ struct bptr_temp
    _Bool is_lite;
    uint32_t node_sz;
    uint16_t key_sz, val_sz;
+   uint64_t cache_cap;
    int (*cmp)(const void *, const void *);
 };
 /*---------------------------- Public Structs END ----------------------------*/

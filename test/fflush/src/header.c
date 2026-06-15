@@ -69,7 +69,7 @@ void _bptr_load_check(struct bptr_temp *template)
 {
    char path[256];
    _bptr_path(path, sizeof(path), template->fnm);
-   struct bptr *bptr = bptr_load(path, template->cmp);
+   struct bptr *bptr = bptr_load(path, template->cache_cap, template->cmp);
 
    TEST_ASSERT_MESSAGE(bptr, "bptr_load failure");
    TEST_ASSERT_EQUAL(bptr->compare, template->cmp);
