@@ -24,6 +24,6 @@ struct bptr *_bptr_create(struct bptr_temp *template)
                                  template->node_sz, template->key_sz,
                                  template->val_sz, template->cache_cap,
                                  template->cmp);
-   TEST_ASSERT(bptr);
+   TEST_ASSERT_MESSAGE(bptr, "`_bptr_create': `bptr_init' returned NULL");
    return bptr;
 }
