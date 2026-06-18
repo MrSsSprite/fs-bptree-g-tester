@@ -65,11 +65,16 @@ void *_wrapper_tools_i64__##S(int64_t inpt) \
 }
 
 
+#define _cast_i64__generate(T, S) \
+int64_t _cast_i64__##S(void *ptr) { return *(T*)ptr; }
+
+
 #define _temp_tools_block(Sk, Sv) (struct bptr_temp_tools) \
 { \
    .node = {   _key_ins_i64__##Sk, _val_ins_i64__##Sv, \
                _key_ers__##Sk, _val_ers__##Sv, \
-               _wrapper_tools_i64__##Sk, _wrapper_tools_i64__##Sv, } \
+               _wrapper_tools_i64__##Sk, _wrapper_tools_i64__##Sv, \
+               _cast_i64__##Sk, } \
 }
 #define _temp_tools_block_rpt(S) _temp_tools_block(S, S)
 /*---------------------------- Private Macros END ----------------------------*/
@@ -87,6 +92,8 @@ _kv_tools_i64__generate(uint32_t, u32);
 _kv_tools_i64__generate(uint64_t, u64);
 _wrapper_tools_i64__generate(uint32_t, u32);
 _wrapper_tools_i64__generate(uint64_t, u64);
+_cast_i64__generate(uint32_t, u32);
+_cast_i64__generate(uint64_t, u64);
 /*-------------------------- Toolbox Functions END ---------------------------*/
 
 
