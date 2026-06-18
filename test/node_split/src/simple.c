@@ -7,6 +7,7 @@
 #include "test_util.h"
 #include "bptr_node.h"
 #include "bptr_static.h"
+#include <inttypes.h>
 /*--------------------------- Private Includes END ---------------------------*/
 
 
@@ -68,6 +69,9 @@ void test_simp_split_end(struct bptr_temp *temp)
    node = bptr_node_fetch(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
    TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "root after split is leaf");
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(bptr->node_bound.leaf.up / 2,
+                                   temp->tools->node.cast_i64(node->keys),
+                                   "key promoted to parent is not median");
    TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
    TEST_ASSERT_EQUAL(1, node->level);
    TEST_ASSERT_EQUAL(0, node->parent);
@@ -90,6 +94,7 @@ void test_simp_split_end(struct bptr_temp *temp)
    TEST_ASSERT_EQUAL(child[1], node->next);
    TEST_ASSERT_BITS(0x3, 0x3, node->flags);
    TEST_ASSERT_NOT_EQUAL(0, node->key_count);
+   uint32_t child0_kc = node->key_count;
    bptr_node_unload(bptr, node);
 
    node = bptr_node_fetch(bptr, child[1]);
@@ -102,6 +107,8 @@ void test_simp_split_end(struct bptr_temp *temp)
    TEST_ASSERT_EQUAL(0, node->next);
    TEST_ASSERT_BITS(0x3, 0x3, node->flags);
    TEST_ASSERT_NOT_EQUAL(0, node->key_count);
+   TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
+      child0_kc, node->key_count, "Right child has more keys than left child");
    bptr_node_unload(bptr, node);
    /*------------------- Check Correctness after Split END -------------------*/
 
