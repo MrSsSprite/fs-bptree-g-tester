@@ -41,6 +41,7 @@ void test_simp_split_end(struct bptr_temp *temp)
 {
    struct bptr *bptr = _bptr_create(temp);
    struct bptr_node *node;
+   bptr_node_t child[2];
 
    TEST_ASSERT_MESSAGE(bptr, "failed at _bptr_create");
    node = bptr_node_new(bptr, 0);
@@ -75,6 +76,32 @@ void test_simp_split_end(struct bptr_temp *temp)
    TEST_ASSERT_BITS(0x3, 0x1, node->flags);
    TEST_ASSERT_EQUAL(1, node->key_count);
 
+   child[0] = _node_brch_vals_get(bptr, node, 0);
+   child[1] = _node_brch_vals_get(bptr, node, 1);
+   bptr_node_unload(bptr, node);
+
+   node = bptr_node_fetch(bptr, child[0]);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[0]");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "child is not leaf");
+   TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
+   TEST_ASSERT_EQUAL(0, node->level);
+   TEST_ASSERT_EQUAL(bptr->root_idx, node->parent);
+   TEST_ASSERT_EQUAL(0, node->prev);
+   TEST_ASSERT_EQUAL(child[1], node->next);
+   TEST_ASSERT_BITS(0x3, 0x3, node->flags);
+   TEST_ASSERT_NOT_EQUAL(0, node->key_count);
+   bptr_node_unload(bptr, node);
+
+   node = bptr_node_fetch(bptr, child[1]);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "child is not leaf");
+   TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
+   TEST_ASSERT_EQUAL(0, node->level);
+   TEST_ASSERT_EQUAL(bptr->root_idx, node->parent);
+   TEST_ASSERT_EQUAL(child[0], node->prev);
+   TEST_ASSERT_EQUAL(0, node->next);
+   TEST_ASSERT_BITS(0x3, 0x3, node->flags);
+   TEST_ASSERT_NOT_EQUAL(0, node->key_count);
    bptr_node_unload(bptr, node);
    /*------------------- Check Correctness after Split END -------------------*/
 
