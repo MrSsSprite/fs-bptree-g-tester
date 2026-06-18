@@ -107,5 +107,9 @@ void test_simp_split_end(struct bptr_temp *temp)
 
    TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0,
                        "Failed to unload bptr");
+
+   char path[256];
+   _bptr_path(path, sizeof(path), temp->fnm);
+   TEST_ASSERT_EQUAL(0, remove(path));
 }
 /*--------------------------- Test Proccesses END ----------------------------*/
