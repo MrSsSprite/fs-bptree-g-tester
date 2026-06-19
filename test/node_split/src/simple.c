@@ -64,14 +64,12 @@ void test_simp_split_end(struct bptr_temp *temp)
    bptr_node_unload(bptr, node);
 
    /*--------------------- Check Correctness after Split ---------------------*/
+   int64_t idx = 0, par_ki;
    // TODO: check stats members in bptr
    // Check Root
    node = bptr_node_fetch(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
    TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "root after split is leaf");
-   TEST_ASSERT_EQUAL_INT64_MESSAGE(bptr->node_bound.leaf.up / 2,
-                                   temp->tools->node.cast_i64(node->keys),
-                                   "key promoted to parent is not median");
    TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
    TEST_ASSERT_EQUAL(1, node->level);
    TEST_ASSERT_EQUAL(0, node->parent);
@@ -82,6 +80,7 @@ void test_simp_split_end(struct bptr_temp *temp)
 
    child[0] = _node_brch_vals_get(bptr, node, 0);
    child[1] = _node_brch_vals_get(bptr, node, 1);
+   par_ki = temp->tools->node.cast_i64(node->keys);
    bptr_node_unload(bptr, node);
 
    node = bptr_node_fetch(bptr, child[0]);
@@ -95,7 +94,16 @@ void test_simp_split_end(struct bptr_temp *temp)
    TEST_ASSERT_BITS(0x3, 0x3, node->flags);
    TEST_ASSERT_NOT_EQUAL(0, node->key_count);
    uint32_t child0_kc = node->key_count;
+   for (uint32_t i = 0; i < node->key_count; i++)
+    {
+      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i);
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, key, "child[0] key not match");
+      idx++;
+    }
    bptr_node_unload(bptr, node);
+
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "child[0] key not match");
+   printf("parent key: %" PRId64 "\n", par_ki);
 
    node = bptr_node_fetch(bptr, child[1]);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
@@ -109,6 +117,16 @@ void test_simp_split_end(struct bptr_temp *temp)
    TEST_ASSERT_NOT_EQUAL(0, node->key_count);
    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
       child0_kc, node->key_count, "Right child has more keys than left child");
+   for (uint32_t i = 0; i < node->key_count - 1; i++)
+    {
+      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i);
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, key, "child[1] key not match");
+      idx++;
+    }
+   int64_t key =
+      temp->tools->node.cast_i64(node->keys +
+                                 bptr->key_size * (node->key_count - 1));
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(0xFFFFFFFF, key, "child[1] key not match");
    bptr_node_unload(bptr, node);
    /*------------------- Check Correctness after Split END -------------------*/
 
