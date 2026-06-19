@@ -82,9 +82,17 @@ int64_t _cast_i64__##S(void *ptr) { return *(T*)ptr; }
 
 /*---------------------- Private Function Declarations -----------------------*/
 int cmp_u32(const void *lhs, const void *rhs)
-{ return (const uint32_t *)lhs - (const uint32_t *)rhs; }
+{
+   const uint32_t lval = *(const uint32_t *)lhs,
+                  rval = *(const uint32_t *)rhs;
+   return lval < rval ? -1 : lval == rval ? 0 : 1;
+}
 int cmp_u64(const void *lhs, const void *rhs)
-{ return (const uint64_t *)lhs - (const uint64_t *)rhs; }
+{
+   const uint64_t lval = *(const uint64_t *)lhs,
+                  rval = *(const uint64_t *)rhs;
+   return lval < rval ? -1 : lval == rval ? 0 : 1;
+}
 /*-------------------- Private Function Declarations END ---------------------*/
 
 /*---------------------------- Toolbox Functions -----------------------------*/
