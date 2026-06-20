@@ -13,6 +13,7 @@
 
 /*---------------------- Private Function Declarations -----------------------*/
 void test_simp_split_end(struct bptr_temp *temp);
+void test_simp_split_beg(struct bptr_temp *temp);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -30,7 +31,10 @@ void test_simp_split(void)
     {
       for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
            tp_it < tp_mx; tp_it++)
+       {
          test_simp_split_end(test_matrix[m_it] + tp_it);
+         test_simp_split_beg(test_matrix[m_it] + tp_it);
+       }
     }
 }
 /*------------------------------ Test Units END ------------------------------*/
@@ -132,6 +136,109 @@ void test_simp_split_end(struct bptr_temp *temp)
       temp->tools->node.cast_i64(node->keys +
                                  bptr->key_size * (node->key_count - 1));
    TEST_ASSERT_EQUAL_INT64_MESSAGE(0xFFFFFFFF, key, "child[1] key not match");
+   bptr_node_unload(bptr, node);
+   /*------------------- Check Correctness after Split END -------------------*/
+
+   TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0,
+                       "Failed to unload bptr");
+
+   char path[256];
+   _bptr_path(path, sizeof(path), temp->fnm);
+   TEST_ASSERT_EQUAL(0, remove(path));
+}
+
+
+// New element at the beginning (i.e., greater than all existing elements)
+void test_simp_split_beg(struct bptr_temp *temp)
+{
+   struct bptr *bptr = _bptr_create(temp);
+   struct bptr_node *node;
+   bptr_node_t child[2];
+
+   TEST_ASSERT_MESSAGE(bptr, "failed at _bptr_create");
+   node = bptr_node_new(bptr, 0);
+   TEST_ASSERT_MESSAGE(node, "failed at bptr_node_new");
+   node->prev = node->next = 0;
+   bptr->root_idx = node->node_idx;
+
+   // Fill node
+   temp->tools->node.val_ins_i64(node, 0, 0);
+   for (int64_t i = 1, mx = bptr->node_bound.leaf.up; i < mx; i++)
+      _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
+
+   // Split
+   TEST_ASSERT_MESSAGE(
+      bptr_node_split(bptr, node,
+                      temp->tools->node.key_wrapper_i64(0),
+                      temp->tools->node.val_wrapper_i64(0)),
+      "Failed at Split");
+   bptr_node_unload(bptr, node);
+
+   /*--------------------- Check Correctness after Split ---------------------*/
+   int64_t idx = 0, par_ki;
+   // TODO: check stats members in bptr
+   // Check Root
+   node = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
+   TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "root after split is leaf");
+   TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
+   TEST_ASSERT_EQUAL(1, node->level);
+   TEST_ASSERT_EQUAL(0, node->parent);
+   TEST_ASSERT_EQUAL(0, node->prev);
+   TEST_ASSERT_EQUAL(0, node->next);
+   TEST_ASSERT_BITS(0x3, 0x1, node->flags);
+   TEST_ASSERT_EQUAL(1, node->key_count);
+
+   child[0] = _node_brch_vals_get(bptr, node, 0);
+   child[1] = _node_brch_vals_get(bptr, node, 1);
+   par_ki = temp->tools->node.cast_i64(node->keys);
+   bptr_node_unload(bptr, node);
+
+   node = bptr_node_fetch(bptr, child[0]);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[0]");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "child is not leaf");
+   TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
+   TEST_ASSERT_EQUAL(0, node->level);
+   TEST_ASSERT_EQUAL(bptr->root_idx, node->parent);
+   TEST_ASSERT_EQUAL(0, node->prev);
+   TEST_ASSERT_EQUAL(child[1], node->next);
+   TEST_ASSERT_BITS(0x3, 0x3, node->flags);
+   TEST_ASSERT_NOT_EQUAL(0, node->key_count);
+   uint32_t child0_kc = node->key_count;
+   for (uint32_t i = 0; i < node->key_count; i++)
+    {
+      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i),
+              val =
+                 temp->tools->node.cast_i64(node->vals + bptr->value_size * i);
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, key, "child[0] key not match");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx + 1, val, "child[0] value not match");
+      idx++;
+    }
+   bptr_node_unload(bptr, node);
+
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "child[0] key not match");
+
+   node = bptr_node_fetch(bptr, child[1]);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "child is not leaf");
+   TEST_ASSERT_NOT_EQUAL(0, node->node_idx);
+   TEST_ASSERT_EQUAL(0, node->level);
+   TEST_ASSERT_EQUAL(bptr->root_idx, node->parent);
+   TEST_ASSERT_EQUAL(child[0], node->prev);
+   TEST_ASSERT_EQUAL(0, node->next);
+   TEST_ASSERT_BITS(0x3, 0x3, node->flags);
+   TEST_ASSERT_NOT_EQUAL(0, node->key_count);
+   TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
+      child0_kc, node->key_count, "Right child has more keys than left child");
+   for (uint32_t i = 0; i < node->key_count; i++)
+    {
+      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i),
+              val =
+                 temp->tools->node.cast_i64(node->vals + bptr->value_size * i);
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, key, "child[1] key not match");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx + 1, val, "child[1] value not match");
+      idx++;
+    }
    bptr_node_unload(bptr, node);
    /*------------------- Check Correctness after Split END -------------------*/
 
