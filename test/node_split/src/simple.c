@@ -96,8 +96,11 @@ void test_simp_split_end(struct bptr_temp *temp)
    uint32_t child0_kc = node->key_count;
    for (uint32_t i = 0; i < node->key_count; i++)
     {
-      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i);
+      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i),
+              val =
+                 temp->tools->node.cast_i64(node->vals + bptr->value_size * i);
       TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, key, "child[0] key not match");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx + 1, val, "child[0] value not match");
       idx++;
     }
    bptr_node_unload(bptr, node);
@@ -118,8 +121,11 @@ void test_simp_split_end(struct bptr_temp *temp)
       child0_kc, node->key_count, "Right child has more keys than left child");
    for (uint32_t i = 0; i < node->key_count - 1; i++)
     {
-      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i);
+      int64_t key = temp->tools->node.cast_i64(node->keys + bptr->key_size * i),
+              val =
+                 temp->tools->node.cast_i64(node->vals + bptr->value_size * i);
       TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, key, "child[1] key not match");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(idx + 1, val, "child[1] value not match");
       idx++;
     }
    int64_t key =
