@@ -103,7 +103,6 @@ void test_simp_split_end(struct bptr_temp *temp)
    bptr_node_unload(bptr, node);
 
    TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "child[0] key not match");
-   printf("parent key: %" PRId64 "\n", par_ki);
 
    node = bptr_node_fetch(bptr, child[1]);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
