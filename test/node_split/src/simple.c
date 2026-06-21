@@ -55,7 +55,6 @@ void test_simp_split_end(struct bptr_temp *temp)
    bptr->root_idx = node->node_idx;
 
    // Fill node
-   temp->tools->node.val_ins_i64(node, 0, 0);
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
       _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
 
@@ -162,7 +161,6 @@ void test_simp_split_beg(struct bptr_temp *temp)
    bptr->root_idx = node->node_idx;
 
    // Fill node
-   temp->tools->node.val_ins_i64(node, 0, 0);
    for (int64_t i = 1, mx = bptr->node_bound.leaf.up; i < mx; i++)
       _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
 
