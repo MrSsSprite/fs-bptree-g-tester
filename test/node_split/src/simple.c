@@ -60,6 +60,8 @@ void test_simp_split_end(struct bptr_temp *temp)
    // Fill node
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
       _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
+   bptr->record_cnt = node->key_count;
+   bptr->node_cnt++;
 
    // Split
    TEST_ASSERT_MESSAGE(
@@ -71,7 +73,11 @@ void test_simp_split_end(struct bptr_temp *temp)
 
    /*--------------------- Check Correctness after Split ---------------------*/
    int64_t idx = 0, par_ki;
-   // TODO: check stats members in bptr
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(2, bptr->height, "bptr->height != 2 after split");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(bptr->node_bound.leaf.up, bptr->record_cnt,
+                                    "record count not correct");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(3, bptr->node_cnt,
+                                    "bptr->node_cnt != 3 after split");
    // Check Root
    node = bptr_node_fetch(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
@@ -166,6 +172,8 @@ void test_simp_split_beg(struct bptr_temp *temp)
    // Fill node
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
       _bptr_kv_ins_i64(node, temp->tools, i + 1, i + 2, i);
+   bptr->record_cnt = node->key_count;
+   bptr->node_cnt++;
 
    // Split
    TEST_ASSERT_MESSAGE(
@@ -177,7 +185,11 @@ void test_simp_split_beg(struct bptr_temp *temp)
 
    /*--------------------- Check Correctness after Split ---------------------*/
    int64_t idx = 0, par_ki;
-   // TODO: check stats members in bptr
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(2, bptr->height, "bptr->height != 2 after split");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(bptr->node_bound.leaf.up, bptr->record_cnt,
+                                    "record count not correct");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(3, bptr->node_cnt,
+                                    "bptr->node_cnt != 3 after split");
    // Check Root
    node = bptr_node_fetch(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
@@ -273,6 +285,8 @@ void test_simp_split_mid(struct bptr_temp *temp)
        if (i == mid_i) j++;
       _bptr_kv_ins_i64(node, temp->tools, j, j + 1, i);
     }
+   bptr->record_cnt = node->key_count;
+   bptr->node_cnt++;
 
    // Split
    TEST_ASSERT_MESSAGE(
@@ -284,7 +298,11 @@ void test_simp_split_mid(struct bptr_temp *temp)
 
    /*--------------------- Check Correctness after Split ---------------------*/
    int64_t idx = 0, par_ki;
-   // TODO: check stats members in bptr
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(2, bptr->height, "bptr->height != 2 after split");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(bptr->node_bound.leaf.up, bptr->record_cnt,
+                                    "record count not correct");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(3, bptr->node_cnt,
+                                    "bptr->node_cnt != 3 after split");
    // Check Root
    node = bptr_node_fetch(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load root");
