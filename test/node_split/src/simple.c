@@ -161,14 +161,14 @@ void test_simp_split_beg(struct bptr_temp *temp)
    bptr->root_idx = node->node_idx;
 
    // Fill node
-   for (int64_t i = 1, mx = bptr->node_bound.leaf.up; i < mx; i++)
-      _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
+   for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
+      _bptr_kv_ins_i64(node, temp->tools, i + 1, i + 2, i);
 
    // Split
    TEST_ASSERT_MESSAGE(
       bptr_node_split(bptr, node,
                       temp->tools->node.key_wrapper_i64(0),
-                      temp->tools->node.val_wrapper_i64(0)),
+                      temp->tools->node.val_wrapper_i64(1)),
       "Failed at Split");
    bptr_node_unload(bptr, node);
 
