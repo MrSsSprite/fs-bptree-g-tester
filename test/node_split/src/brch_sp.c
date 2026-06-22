@@ -162,9 +162,10 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(
          _node_brch_vals_get(bptr, par_n, brch_i - 1), node->prev,
          "prev of first child not 0");
-      TEST_ASSERT_EQUAL_UINT64_MESSAGE(
-         _node_brch_vals_get(bptr, par_n, brch_i + 1), node->next,
-         "next of child does not match list in par_n");
+      if (brch_i < brch_mx - 1)
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+            _node_brch_vals_get(bptr, par_n, brch_i + 1), node->next,
+            "next of child does not match list in par_n");
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(
          bptr->node_bound.leaf.up - 1, node->key_count, "child node not full");
       TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "child not leaf");
