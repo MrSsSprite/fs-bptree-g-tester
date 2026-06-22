@@ -71,6 +71,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
    par_n->prev = par_n->next = 0;
    node->parent = par_n->node_idx;
    temp->tools->node.val_ins_i64(par_n, node->node_idx, 0);
+   bptr->root_idx = par_n->node_idx;
    bptr->node_cnt++;
 
    for (uint32_t brch_i = 0, brch_mx = bptr->node_bound.brch.up - 1;
