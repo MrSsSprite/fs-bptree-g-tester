@@ -4,6 +4,7 @@
 /*----------------------------- Public Includes ------------------------------*/
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 #include "bptr_node.h"
 /*--------------------------- Public Includes END ----------------------------*/
 
@@ -48,12 +49,35 @@ extern size_t norm_temps_iu_sz;
 
 
 /*----------------------------- Public Functions -----------------------------*/
+/**
+ * @brief   Insert a child pointer into a branch node's vals array with the
+ *          correct pointer size (lite=4, norm=8).
+ */
+static inline
+void _bptr_val_ins_ptr(struct bptr_node *node, int64_t ptr_val, size_t idx,
+                       _Bool is_lite)
+{
+   size_t val_cnt = _node_val_cnt(node);
+   size_t ptr_size = is_lite ? 4 : 8;
+   if (idx < val_cnt)
+      memmove((char*)node->vals + (idx + 1) * ptr_size,
+              (char*)node->vals + idx * ptr_size,
+              (val_cnt - idx) * ptr_size);
+   if (is_lite)
+      ((uint32_t*)node->vals)[idx] = (uint32_t)ptr_val;
+   else
+      ((uint64_t*)node->vals)[idx] = (uint64_t)ptr_val;
+}
+
 static inline
 void _bptr_kv_ins_i64(struct bptr_node *node, struct bptr_temp_tools *tools,
-                      int64_t key, int64_t val, size_t idx)
+                      int64_t key, int64_t val, size_t idx, _Bool is_lite)
 {
    tools->node.key_ins_i64(node, key, idx);
-   tools->node.val_ins_i64(node, val, node->is_leaf ? idx : idx + 1);
+   if (node->is_leaf)
+      tools->node.val_ins_i64(node, val, idx);
+   else
+      _bptr_val_ins_ptr(node, val, idx + 1, is_lite);
    node->key_count++;
 }
 

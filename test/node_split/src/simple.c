@@ -59,7 +59,7 @@ void test_simp_split_end(struct bptr_temp *temp)
 
    // Fill node
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
-      _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i);
+      _bptr_kv_ins_i64(node, temp->tools, i, i + 1, i, bptr->is_lite);
    bptr->record_cnt = node->key_count;
    bptr->node_cnt++;
 
@@ -171,7 +171,7 @@ void test_simp_split_beg(struct bptr_temp *temp)
 
    // Fill node
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1; i < mx; i++)
-      _bptr_kv_ins_i64(node, temp->tools, i + 1, i + 2, i);
+      _bptr_kv_ins_i64(node, temp->tools, i + 1, i + 2, i, bptr->is_lite);
    bptr->record_cnt = node->key_count;
    bptr->node_cnt++;
 
@@ -283,7 +283,7 @@ void test_simp_split_mid(struct bptr_temp *temp)
         i < mx; i++, j++)
     {
        if (i == mid_i) j++;
-      _bptr_kv_ins_i64(node, temp->tools, j, j + 1, i);
+      _bptr_kv_ins_i64(node, temp->tools, j, j + 1, i, bptr->is_lite);
     }
    bptr->record_cnt = node->key_count;
    bptr->node_cnt++;

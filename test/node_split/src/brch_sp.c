@@ -62,7 +62,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
    node->prev = 0;
    for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
         leaf_i < leaf_mx; leaf_i++, i++)
-      _bptr_kv_ins_i64(node, temp->tools, i, i * 2, leaf_i);
+      _bptr_kv_ins_i64(node, temp->tools, i, i * 2, leaf_i, bptr->is_lite);
    bptr->record_cnt += node->key_count;
    bptr->node_cnt++;
 
@@ -70,7 +70,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
    TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "bptr_node_new failure");
    par_n->prev = par_n->next = 0;
    node->parent = par_n->node_idx;
-   temp->tools->node.val_ins_i64(par_n, node->node_idx, 0);
+   _bptr_val_ins_ptr(par_n, node->node_idx, 0, bptr->is_lite);
    bptr->root_idx = par_n->node_idx;
    bptr->node_cnt++;
 
@@ -86,13 +86,13 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
 
       for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
            leaf_i < leaf_mx; leaf_i++, i++)
-         _bptr_kv_ins_i64(node, temp->tools, i, i * 2, leaf_i);
+         _bptr_kv_ins_i64(node, temp->tools, i, i * 2, leaf_i, bptr->is_lite);
       bptr->record_cnt += node->key_count;
       bptr->node_cnt++;
 
       _bptr_kv_ins_i64(par_n, temp->tools,
                        temp->tools->node.cast_i64(node->keys),
-                       node->node_idx, brch_i);
+                       node->node_idx, brch_i, bptr->is_lite);
     }
    node->next = 0;
    bptr_node_unload(bptr, node);
