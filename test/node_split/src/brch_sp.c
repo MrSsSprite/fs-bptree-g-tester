@@ -136,7 +136,7 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
       _node_brch_vals_get(bptr, par_n, 0), node->node_idx,
       "node index does not match par_n->vals");
    TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "child level != 0");
-   for (uint32_t leaf_i = 0, leaf_mx = par_n->key_count;
+   for (uint32_t leaf_i = 0, leaf_mx = node->key_count;
         leaf_i < leaf_mx; leaf_i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
@@ -172,7 +172,7 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
          _node_brch_vals_get(bptr, par_n, brch_i), node->node_idx,
          "node index does not match par_n->vals");
       TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "child level != 0");
-      for (uint32_t leaf_i = 0, leaf_mx = par_n->key_count;
+      for (uint32_t leaf_i = 0, leaf_mx = node->key_count;
            leaf_i < leaf_mx; leaf_i++)
        {
          TEST_ASSERT_EQUAL_INT64_MESSAGE(
