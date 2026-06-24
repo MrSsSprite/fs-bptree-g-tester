@@ -50,7 +50,7 @@ void test_sing_brch_split(struct bptr_temp *temp)
 /*---------------------------- Private Utilities -----------------------------*/
 void _bptr_full_brch_create(struct bptr_temp *temp)
 {
-   struct bptr *bptr = _bptr_create(temp);
+   struct bptr *bptr = _bptr_create_subdir(temp, "temp");
    struct bptr_node *node, *par_n;
    int64_t i = 0;
 
@@ -109,7 +109,7 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
    struct bptr_node *node, *par_n;
    int64_t i = 0;
 
-   _bptr_path(path, sizeof(path), temp->fnm);
+   _bptr_path_subdir(path, sizeof(path), temp->fnm, "temp");
    bptr = bptr_load(path, 256, temp->cmp);
    TEST_ASSERT_MESSAGE(bptr, "failed at bptr_load");
 
