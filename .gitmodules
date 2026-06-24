@@ -4,3 +4,6 @@
 [submodule "deps/unity"]
 	path = deps/unity
 	url = https://github.com/ThrowTheSwitch/Unity.git
+[submodule "deps/data_structures"]
+	path = deps/data_structures
+	url = https://github.com/MrSsSprite/data_structures.git
