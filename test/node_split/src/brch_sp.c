@@ -1,6 +1,7 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "brch_sp.h"
 #include <stdio.h>
+#include <unistd.h>
 #include "bptree.h"
 #include "unity.h"
 #include "test_bptr_temp.h"
@@ -50,10 +51,14 @@ void test_sing_brch_split(struct bptr_temp *temp)
 /*---------------------------- Private Utilities -----------------------------*/
 void _bptr_full_brch_create(struct bptr_temp *temp)
 {
-   struct bptr *bptr = _bptr_create_subdir(temp, "temp");
+   char path[256];
+   struct bptr *bptr;
    struct bptr_node *node, *par_n;
    int64_t i = 0;
 
+   _bptr_path_subdir(path, sizeof(path), temp->fnm, "temp");
+   if (access(path, F_OK) == 0) return;
+   bptr = _bptr_create_subdir(temp, "temp");
    TEST_ASSERT_MESSAGE(bptr, "failed at _bptr_create");
    // Fill up the internal node at level==1
    // Since Redistribution is not available yet, manually create all the nodes.
