@@ -85,7 +85,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
    node->prev = 0;
    for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
         leaf_i < leaf_mx; leaf_i++, i++)
-      _bptr_kv_ins_i64(node, temp->tools, i, i * 2, leaf_i, bptr->is_lite);
+      _bptr_kv_ins_i64(node, temp->tools, i * 2, i * 3, leaf_i, bptr->is_lite);
    bptr->record_cnt += node->key_count;
    bptr->node_cnt++;
 
@@ -109,7 +109,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
 
       for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
            leaf_i < leaf_mx; leaf_i++, i++)
-         _bptr_kv_ins_i64(node, temp->tools, i, i * 2, leaf_i, bptr->is_lite);
+         _bptr_kv_ins_i64(node, temp->tools, i * 2, i * 3, leaf_i, bptr->is_lite);
       bptr->record_cnt += node->key_count;
       bptr->node_cnt++;
 
@@ -163,10 +163,10 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
         leaf_i < leaf_mx; leaf_i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         i * 2, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
          "child key not match");
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 2, temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         i * 3, temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "child val not match");
       i++;
     }
@@ -200,10 +200,10 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
            leaf_i < leaf_mx; leaf_i++)
        {
          TEST_ASSERT_EQUAL_INT64_MESSAGE(
-            i, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+            i * 2, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
             "child key not match");
          TEST_ASSERT_EQUAL_INT64_MESSAGE(
-            i * 2,
+            i * 3,
             temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
             "child val not match");
          i++;
