@@ -25,6 +25,7 @@ void test_brch_split(void)
    size_t test_sz_matrix[] = { lite_temps_iu_sz, norm_temps_iu_sz };
    puts("Test Unit: Internal Node Split (test_brch_split)");
 
+   // Create and verify template .bptr files
    for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
         m_it < m_mx; m_it++)
     {
