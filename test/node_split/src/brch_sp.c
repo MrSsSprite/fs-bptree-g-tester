@@ -59,9 +59,27 @@ void test_brch_split(void)
 
 /*------------------------------ Test Processes ------------------------------*/
 // Trigger a leaf split that causes its parent (an internal node) to be full
-// and split. The spawned leaf will be the last node.
-void test_sing_brch_split(struct bptr_temp *temp)
+// and split. The spawned leaf will be the right most node.
+void test_sing_brch_split_end(struct bptr_temp *temp)
 {
+   struct bptr *bptr = bptr_load(temp->fnm, temp->cache_cap, temp->cmp);
+   struct bptr_node *par_n, *node;
+
+   TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
+   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
+   par_n = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch root");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      bptr->node_bound.brch.up - 1, par_n->key_count, "root not full");
+
+   node = bptr_node_fetch(bptr,
+                          _node_brch_vals_get(bptr, par_n, par_n->key_count));
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      bptr->node_bound.leaf.up - 1, node->key_count,
+      "rightmost child not full");
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch child");
+
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
 }
 /*---------------------------- Test Processes END ----------------------------*/
 
