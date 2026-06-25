@@ -39,6 +39,20 @@ void test_brch_split(void)
          _bptr_full_brch_verify(test_matrix[m_it] + tp_it);
        }
     }
+
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+       {
+         char path[256];
+         _bptr_path_subdir(path, sizeof(path),
+                           test_matrix[m_it][tp_it].fnm, "temp");
+         TEST_ASSERT_EQUAL_MESSAGE(0, remove(path),
+                                   "failed to remove template");
+       }
+    }
 }
 /*------------------------------ Test Units END ------------------------------*/
 
