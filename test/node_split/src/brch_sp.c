@@ -1,7 +1,9 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "brch_sp.h"
 #include <stdio.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "bptree.h"
 #include "unity.h"
 #include "test_bptr_temp.h"
@@ -15,6 +17,7 @@
 void _bptr_full_brch_create(struct bptr_temp *temp);
 void _bptr_full_brch_verify(struct bptr_temp *temp);
 void test_sing_brch_split(struct bptr_temp *temp);
+int temp_instantiate(const struct bptr_temp *temp, const char *prefix);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -195,5 +198,40 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
     }
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "bptr_unload failure");
+}
+
+
+// Returns file descriptor of the instantiated bptr file
+int temp_instantiate(const struct bptr_temp *temp, const char *prefix)
+{
+   char path[256], buf[4096];
+   int sfd, dfd;
+   int fn_ret;
+   ssize_t n;
+   struct stat st;
+
+   _bptr_path_subdir(path, sizeof(path), temp->fnm, "temp");
+   sfd = open(path, O_RDONLY);
+   if (sfd < 0) return -1;
+
+   if (fstat(sfd, &st)) { close(sfd); return -1; }
+
+   fn_ret = snprintf(path, sizeof(path), "bptr/%s_%s", prefix, temp->fnm);
+   if (fn_ret < 0 || fn_ret > sizeof(path)) { close(sfd); return -1; }
+   dfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+   if (dfd  < 0) { close(sfd); return -1; }
+
+   while ((n = read(sfd, buf, sizeof(buf))) > 0)
+    {
+      char *str_it = buf;
+      ssize_t written;
+      while (n > 0 && (written = write(dfd, str_it, n)) > 0)
+       { str_it += written; n -= written; }
+      if (written < 0) { close(sfd); close(dfd); return -1; }
+    }
+
+   close(sfd);
+   if (n < 0) { close(dfd); return -1; }
+   return dfd;
 }
 /*-------------------------- Private Utilities END ---------------------------*/
