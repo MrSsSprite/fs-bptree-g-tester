@@ -18,6 +18,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp);
 void _bptr_full_brch_verify(struct bptr_temp *temp);
 void test_sing_brch_split(struct bptr_temp *temp);
 int temp_instantiate(const struct bptr_temp *temp, const char *prefix);
+void test_sing_brch_split_end(struct bptr_temp *temp);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -74,10 +75,17 @@ void test_sing_brch_split_end(struct bptr_temp *temp)
 
    node = bptr_node_fetch(bptr,
                           _node_brch_vals_get(bptr, par_n, par_n->key_count));
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch child");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(
       bptr->node_bound.leaf.up - 1, node->key_count,
       "rightmost child not full");
-   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch child");
+   int64_t key = temp->tools->node.cast_i64(
+      node->keys + bptr->key_size * (node->key_count - 1)) + 1;
+   bptr_node_t n_idx =
+      bptr_node_split(bptr, node,
+                      temp->tools->node.key_wrapper_i64(key),
+                      temp->tools->node.val_wrapper_i64(key / 2 * 3));
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE( 0, n_idx, "`bptr_node_split failure'");
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
 }
