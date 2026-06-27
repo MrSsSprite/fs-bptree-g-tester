@@ -64,7 +64,7 @@ void test_brch_split(void)
 void test_sing_brch_split_end(struct bptr_temp *temp)
 {
    struct bptr *bptr = bptr_load(temp->fnm, temp->cache_cap, temp->cmp);
-   struct bptr_node *par_n, *node;
+   struct bptr_node *par_n, *node, *next_n;
 
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
    TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
@@ -79,6 +79,19 @@ void test_sing_brch_split_end(struct bptr_temp *temp)
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(
       bptr->node_bound.leaf.up - 1, node->key_count,
       "rightmost child not full");
+   // check node correctness before split
+   int64_t i = (par_n->key_count - 1) * (bptr->node_bound.leaf.up - 1);
+   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++)
+    {
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 2,
+         temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         "Invalid node (key) before split");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 3,
+         temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         "Invalid node (value) before split");
+    }
    int64_t key = temp->tools->node.cast_i64(
       node->keys + bptr->key_size * (node->key_count - 1)) + 1;
    bptr_node_t n_idx =
@@ -86,6 +99,9 @@ void test_sing_brch_split_end(struct bptr_temp *temp)
                       temp->tools->node.key_wrapper_i64(key),
                       temp->tools->node.val_wrapper_i64(key / 2 * 3));
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE( 0, n_idx, "`bptr_node_split failure'");
+
+   next_n = bptr_node_fetch(bptr, n_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to load new node");
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
 }
