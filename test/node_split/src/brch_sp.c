@@ -17,8 +17,10 @@
 void _bptr_full_brch_create(struct bptr_temp *temp);
 void _bptr_full_brch_verify(struct bptr_temp *temp);
 void test_sing_brch_split(struct bptr_temp *temp);
-int temp_instantiate(const struct bptr_temp *temp, const char *prefix);
-void test_sing_brch_split_end(struct bptr_temp *temp);
+int temp_instantiate
+ (const struct bptr_temp *temp, const char *prefix,
+  char *dst_path, size_t dst_path_sz);
+void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -48,6 +50,23 @@ void test_brch_split(void)
            tp_it < tp_mx; tp_it++)
        {
          char path[256];
+         TEST_ASSERT_EQUAL_MESSAGE(0,
+            temp_instantiate(test_matrix[m_it] + tp_it, "temp",
+                             path, sizeof(path)),
+            "temp_instantiate failure");
+         test_sing_brch_split_end(test_matrix[m_it] + tp_it, path);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path),
+            "failed to remove instantiated template");
+       }
+    }
+
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+       {
+         char path[256];
          _bptr_path_subdir(path, sizeof(path),
                            test_matrix[m_it][tp_it].fnm, "temp");
          TEST_ASSERT_EQUAL_MESSAGE(0, remove(path),
@@ -61,9 +80,10 @@ void test_brch_split(void)
 /*------------------------------ Test Processes ------------------------------*/
 // Trigger a leaf split that causes its parent (an internal node) to be full
 // and split. The spawned leaf will be the right most node.
-void test_sing_brch_split_end(struct bptr_temp *temp)
+void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
 {
-   struct bptr *bptr = bptr_load(temp->fnm, temp->cache_cap, temp->cmp);
+   struct bptr *bptr = bptr_load(fnm ? fnm : temp->fnm,
+                                 temp->cache_cap, temp->cmp);
    struct bptr_node *par_n, *node, *next_n;
 
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
@@ -80,8 +100,9 @@ void test_sing_brch_split_end(struct bptr_temp *temp)
       bptr->node_bound.leaf.up - 1, node->key_count,
       "rightmost child not full");
    // check node correctness before split
-   int64_t i = (par_n->key_count - 1) * (bptr->node_bound.leaf.up - 1);
-   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++)
+   int64_t i = (par_n->key_count) * (bptr->node_bound.leaf.up - 1),
+           i_before_split = i;
+   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
          i * 2,
@@ -92,16 +113,48 @@ void test_sing_brch_split_end(struct bptr_temp *temp)
          temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "Invalid node (value) before split");
     }
-   int64_t key = temp->tools->node.cast_i64(
-      node->keys + bptr->key_size * (node->key_count - 1)) + 1;
+
    bptr_node_t n_idx =
       bptr_node_split(bptr, node,
-                      temp->tools->node.key_wrapper_i64(key),
-                      temp->tools->node.val_wrapper_i64(key / 2 * 3));
-   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE( 0, n_idx, "`bptr_node_split failure'");
+                      temp->tools->node.key_wrapper_i64(i * 2),
+                      temp->tools->node.val_wrapper_i64(i * 3));
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, n_idx, "`bptr_node_split failure'");
 
+   // check node correctness after split
    next_n = bptr_node_fetch(bptr, n_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to load new node");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+      bptr->node_bound.leaf.up, node->key_count + next_n->key_count,
+      "sum of key_count of node and next_n incorrect");
+   TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
+      node->key_count, next_n->key_count,
+      "right child has more key than left child");
+   TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
+      1, node->key_count - next_n->key_count,
+      "(node->key_count - next_n->key_count)");
+   i = i_before_split;
+   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
+    {
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 2,
+         temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         "Invalid node (key) after split");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 3,
+         temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         "Invalid node (value) after split");
+    }
+   for (uint32_t leaf_i = 0; leaf_i < next_n->key_count; leaf_i++, i++)
+    {
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 2,
+         temp->tools->node.cast_i64(next_n->keys + bptr->key_size * leaf_i),
+         "Invalid node (key) after split");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 3,
+         temp->tools->node.cast_i64(next_n->vals + bptr->value_size * leaf_i),
+         "Invalid node (value) after split");
+    }
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
 }
@@ -257,8 +310,9 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
 }
 
 
-// Returns file descriptor of the instantiated bptr file
-int temp_instantiate(const struct bptr_temp *temp, const char *prefix)
+int temp_instantiate
+ (const struct bptr_temp *temp, const char *prefix,
+  char *dst_path, size_t dst_path_sz)
 {
    char path[256], buf[4096];
    int sfd, dfd;
@@ -272,9 +326,9 @@ int temp_instantiate(const struct bptr_temp *temp, const char *prefix)
 
    if (fstat(sfd, &st)) { close(sfd); return -1; }
 
-   fn_ret = snprintf(path, sizeof(path), "bptr/%s_%s", prefix, temp->fnm);
-   if (fn_ret < 0 || fn_ret > sizeof(path)) { close(sfd); return -1; }
-   dfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+   fn_ret = snprintf(dst_path, dst_path_sz, "bptr_files/%s_%s", prefix, temp->fnm);
+   if (fn_ret < 0 || fn_ret > dst_path_sz) { close(sfd); return -1; }
+   dfd = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
    if (dfd  < 0) { close(sfd); return -1; }
 
    while ((n = read(sfd, buf, sizeof(buf))) > 0)
@@ -288,6 +342,7 @@ int temp_instantiate(const struct bptr_temp *temp, const char *prefix)
 
    close(sfd);
    if (n < 0) { close(dfd); return -1; }
-   return dfd;
+   close(dfd);
+   return 0;
 }
 /*-------------------------- Private Utilities END ---------------------------*/
