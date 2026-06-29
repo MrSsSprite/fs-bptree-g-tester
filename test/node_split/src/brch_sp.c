@@ -84,7 +84,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
 {
    struct bptr *bptr = bptr_load(fnm ? fnm : temp->fnm,
                                  temp->cache_cap, temp->cmp);
-   struct bptr_node *par_n, *node, *next_n;
+   struct bptr_node *par_n, *node, *next_n, *root_n;
 
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
    TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
@@ -154,6 +154,69 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
          i * 3,
          temp->tools->node.cast_i64(next_n->vals + bptr->value_size * leaf_i),
          "Invalid node (value) after split");
+    }
+   TEST_ASSERT_NOT_EQUAL_HEX64_MESSAGE(par_n->node_idx, bptr->root_idx,
+                                       "par_n is still root after split");
+   root_n = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(root_n, "failed to fetch root");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(root_n->key_count, 1, "root_n->key_count");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx,
+      _node_brch_vals_get(bptr, root_n, 0),
+      "par_n != first child of root_n");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(_node_brch_vals_get(bptr, root_n, 1),
+      par_n->next,
+      "par_n->next != (root_n->child)[1]");
+   bptr_node_unload(bptr, par_n);
+   par_n = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, 1));
+   TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch (root_n->child)[1]");
+   TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(1, par_n->key_count,
+                                               "par[1] has too few vals");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx,
+      _node_brch_vals_get(bptr, par_n, par_n->key_count - 1),
+      "node != second to last item of par[1]");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(next_n->node_idx,
+      _node_brch_vals_get(bptr, par_n, par_n->key_count),
+      "next_n != last item of par[1]");
+   bptr_node_unload(bptr, node);
+   bptr_node_unload(bptr, next_n);
+   bptr_node_unload(bptr, par_n);
+   node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, 0));
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch (root_n->child)[0]");
+   next_n = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, 1));
+   TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to fetch (root_n->child)[1]");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
+                                    "(root_n->child)[0].prev != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(next_n->node_idx, node->next,
+      "(root_n->child)[0].next != (root_n->child)[1]");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, next_n->next,
+                                    "(root_n->child)[1].next != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
+      "(root_n->child)[1].prev != (root_n->child)[0]");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->node_bound.brch.up,
+      node->key_count + next_n->key_count,
+      "(root_n->child)[0].key_count+(root_n->child)[1].key_count not full");
+   bptr_node_unload(bptr, next_n);
+   par_n = node;
+   // TODO: check all members of par_n correct (except checksum, not implemented yet)
+   for (uint32_t brch_i = 0, brch_mx = bptr->node_bound.brch.up - 1;
+        brch_i < brch_mx; brch_i++)
+    {
+      struct bptr_node *next_n = bptr_node_new(bptr, par_n->node_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "bptr_node_new failure");
+      node->next = next_n->node_idx;
+      next_n->prev = node->node_idx;
+      bptr_node_unload(bptr, node);
+      node = next_n;
+
+      for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
+           leaf_i < leaf_mx; leaf_i++, i++)
+         _bptr_kv_ins_i64(node, temp->tools, i * 2, i * 3, leaf_i, bptr->is_lite);
+      bptr->record_cnt += node->key_count;
+      bptr->node_cnt++;
+
+      _bptr_kv_ins_i64(par_n, temp->tools,
+                       temp->tools->node.cast_i64(node->keys),
+                       node->node_idx, brch_i, bptr->is_lite);
     }
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
