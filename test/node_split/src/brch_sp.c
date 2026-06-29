@@ -196,27 +196,52 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
       node->key_count + next_n->key_count,
       "(root_n->child)[0].key_count+(root_n->child)[1].key_count not full");
    bptr_node_unload(bptr, next_n);
+   // check left internal node
    par_n = node;
    // TODO: check all members of par_n correct (except checksum, not implemented yet)
-   for (uint32_t brch_i = 0, brch_mx = bptr->node_bound.brch.up - 1;
-        brch_i < brch_mx; brch_i++)
+   i = 0;
+   // Leftmost leaf node
+   node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leaf");
+   TEST_ASSERT_EQUAL_MESSAGE(bptr->node_bound.leaf.up - 1, node->key_count,
+                             "leaf node not full");
+   /* TODO: check other members of node */
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev, "prev of first leaf not 0");
+   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
-      struct bptr_node *next_n = bptr_node_new(bptr, par_n->node_idx);
-      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "bptr_node_new failure");
-      node->next = next_n->node_idx;
-      next_n->prev = node->node_idx;
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+         temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         "leaf key does not match");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+         temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         "leaf val does not match");
+    }
+   for (uint32_t brch_i = 0; brch_i < par_n->key_count; brch_i++)
+    {
+      next_n =
+         bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, brch_i + 1));
+      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to fetch leaf");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
+         "prev and par_n child[leaf_i] not match");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(next_n->node_idx, node->next,
+         "next and par_n child[leaf_i] not match");
       bptr_node_unload(bptr, node);
       node = next_n;
-
-      for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
-           leaf_i < leaf_mx; leaf_i++, i++)
-         _bptr_kv_ins_i64(node, temp->tools, i * 2, i * 3, leaf_i, bptr->is_lite);
-      bptr->record_cnt += node->key_count;
-      bptr->node_cnt++;
-
-      _bptr_kv_ins_i64(par_n, temp->tools,
-                       temp->tools->node.cast_i64(node->keys),
-                       node->node_idx, brch_i, bptr->is_lite);
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, node->parent,
+                                       "node->parent != par idx");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+         bptr->node_bound.leaf.up - 1, node->key_count,
+         "leaf node not full");
+      // TODO: check other members of node
+      for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
+       {
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+            temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+            "leaf key not correct");
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+            temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+            "leaf val not correct");
+       }
     }
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
