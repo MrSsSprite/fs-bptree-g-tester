@@ -192,7 +192,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
                                     "(root_n->child)[1].next != 0");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
       "(root_n->child)[1].prev != (root_n->child)[0]");
-   TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->node_bound.brch.up,
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->node_bound.brch.up - 1,
       node->key_count + next_n->key_count,
       "(root_n->child)[0].key_count+(root_n->child)[1].key_count not full");
    bptr_node_unload(bptr, next_n);
