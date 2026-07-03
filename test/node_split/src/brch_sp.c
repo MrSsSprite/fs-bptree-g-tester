@@ -267,8 +267,9 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    bptr_node_unload(bptr, next_n);
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, node->parent,
                                     "node->parent != par idx");
-   TEST_ASSERT_EQUAL_MESSAGE(bptr->node_bound.leaf.up - 1, node->key_count,
-                             "leaf node not full");
+   if (par_n->key_count > 1)  // spec. case: right brch has only 2 children
+      TEST_ASSERT_EQUAL_MESSAGE(bptr->node_bound.leaf.up - 1, node->key_count,
+                                "leaf node not full");
    // TODO: check other members of node
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
