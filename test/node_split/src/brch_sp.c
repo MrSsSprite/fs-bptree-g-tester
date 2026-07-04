@@ -105,19 +105,19 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 2,
+         i * 2 + 2,
          temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
          "Invalid node (key) before split");
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 3,
+         i * 3 + 3,
          temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "Invalid node (value) before split");
     }
 
    bptr_node_t n_idx =
       bptr_node_split(bptr, node,
-                      temp->tools->node.key_wrapper_i64(i * 2),
-                      temp->tools->node.val_wrapper_i64(i * 3));
+                      temp->tools->node.key_wrapper_i64(i * 2 + 2),
+                      temp->tools->node.val_wrapper_i64(i * 3 + 3));
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, n_idx, "`bptr_node_split failure'");
 
    // check node correctness after split
@@ -136,22 +136,22 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 2,
+         i * 2 + 2,
          temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
          "Invalid node (key) after split");
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 3,
+         i * 3 + 3,
          temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "Invalid node (value) after split");
     }
    for (uint32_t leaf_i = 0; leaf_i < next_n->key_count; leaf_i++, i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 2,
+         i * 2 + 2,
          temp->tools->node.cast_i64(next_n->keys + bptr->key_size * leaf_i),
          "Invalid node (key) after split");
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 3,
+         i * 3 + 3,
          temp->tools->node.cast_i64(next_n->vals + bptr->value_size * leaf_i),
          "Invalid node (value) after split");
     }
@@ -209,10 +209,10 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev, "prev of first leaf not 0");
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
-      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
          temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
          "leaf key does not match");
-      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
          temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "leaf val does not match");
     }
@@ -239,10 +239,10 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
          "incorrect internal node key");
       for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
        {
-         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
             temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
             "leaf key not correct");
-         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
             temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
             "leaf val not correct");
        }
@@ -274,10 +274,10 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    // TODO: check other members of node
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
-      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
          temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
          "leaf key does not match");
-      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
          temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "leaf val does not match");
     }
@@ -305,10 +305,10 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
             "incorrect internal node key");
          for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
           {
-            TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
                temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
                "leaf key not correct");
-            TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
                temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
                "leaf val not correct");
           }
@@ -347,10 +347,10 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
     {
       for (uint32_t leaf_i = 0; leaf_i < (*it)->key_count; leaf_i++, i++)
        {
-         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
             temp->tools->node.cast_i64((*it)->keys + bptr->key_size * leaf_i),
             "leaf key not correct");
-         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
             temp->tools->node.cast_i64((*it)->vals + bptr->value_size * leaf_i),
             "leaf val not correct");
        }
@@ -380,7 +380,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
    node->prev = 0;
    for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
         leaf_i < leaf_mx; leaf_i++, i++)
-      _bptr_kv_ins_i64(node, temp->tools, i * 2, i * 3, leaf_i, bptr->is_lite);
+      _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
    bptr->record_cnt += node->key_count;
    bptr->node_cnt++;
 
@@ -404,7 +404,7 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
 
       for (uint32_t leaf_i = 0, leaf_mx = bptr->node_bound.leaf.up - 1;
            leaf_i < leaf_mx; leaf_i++, i++)
-         _bptr_kv_ins_i64(node, temp->tools, i * 2, i * 3, leaf_i, bptr->is_lite);
+         _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
       bptr->record_cnt += node->key_count;
       bptr->node_cnt++;
 
@@ -458,10 +458,10 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
         leaf_i < leaf_mx; leaf_i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 2, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         i * 2 + 2, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
          "child key not match");
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         i * 3, temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         i * 3 + 3, temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
          "child val not match");
       i++;
     }
@@ -495,10 +495,10 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
            leaf_i < leaf_mx; leaf_i++)
        {
          TEST_ASSERT_EQUAL_INT64_MESSAGE(
-            i * 2, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+            i * 2 + 2, temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
             "child key not match");
          TEST_ASSERT_EQUAL_INT64_MESSAGE(
-            i * 3,
+            i * 3 + 3,
             temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
             "child val not match");
          i++;
