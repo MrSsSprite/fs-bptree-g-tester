@@ -254,6 +254,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
       "prev of first child of right brch != last child if left brch");
 
+   // Check right brch
    bptr_node_unload(bptr, node);
    node = bptr_node_fetch(bptr, par_n->next);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch right internal node");
@@ -312,6 +313,48 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
                "leaf val not correct");
           }
        }
+   // Last two nodes
+   if (par_n->key_count > 1)
+    {
+      next_n =
+         bptr_node_fetch(bptr,
+                         _node_brch_vals_get(bptr, par_n, par_n->key_count - 1));
+      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to fetch leaf");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
+         "prev and par_n child[leaf_i] not match");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(next_n->node_idx, node->next,
+         "next and par_n child[leaf_i] not match");
+      bptr_node_unload(bptr, node);
+      node = next_n;
+    }
+   else  // else node is the first node that was checked and not yet unloaded
+      i -= node->key_count;
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, node->parent,
+                                    "node->parent != par idx");
+   next_n = bptr_node_fetch(bptr, node->next);
+   TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to fetch leaf");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
+      "prev of last node");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->next, next_n->node_idx,
+      "node_idx of last node");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, next_n->next, "next of last node");
+   TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
+      next_n->key_count, node->key_count,
+      "node has less key than new_n after split");
+   for (struct bptr_node *n_arr[2] = {node, next_n},
+                         **it = n_arr, **ed = n_arr + 2;
+        it < ed; it++)
+    {
+      for (uint32_t leaf_i = 0; leaf_i < (*it)->key_count; leaf_i++, i++)
+       {
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2,
+            temp->tools->node.cast_i64((*it)->keys + bptr->key_size * leaf_i),
+            "leaf key not correct");
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3,
+            temp->tools->node.cast_i64((*it)->vals + bptr->value_size * leaf_i),
+            "leaf val not correct");
+       }
+    }
 
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
 }
