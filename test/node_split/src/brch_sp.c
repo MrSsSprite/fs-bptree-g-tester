@@ -198,14 +198,35 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    bptr_node_unload(bptr, next_n);
    // check left internal node
    par_n = node;
-   // TODO: check all members of par_n correct (except checksum, not implemented yet)
+   TEST_ASSERT_FALSE_MESSAGE(par_n->is_leaf, "par_n is_leaf should be false");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      _node_brch_vals_get(bptr, root_n, 0), par_n->node_idx,
+      "par_n->node_idx incorrect");
+   TEST_ASSERT_EQUAL_MESSAGE(1, par_n->level, "par_n->level != 1");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(root_n->node_idx, par_n->parent,
+                                    "par_n->parent != root_n");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, par_n->flags,
+                                 "par_n flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, par_n->flags,
+                                "par_n flags has LEAF set");
+   TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(1, par_n->key_count,
+                                               "par_n has too few keys");
    i = 0;
    // Leftmost leaf node
    node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leaf");
    TEST_ASSERT_EQUAL_MESSAGE(bptr->node_bound.leaf.up - 1, node->key_count,
                              "leaf node not full");
-   /* TODO: check other members of node */
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "first leaf is_leaf not true");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      _node_brch_vals_get(bptr, par_n, 0), node->node_idx,
+      "first leaf node_idx incorrect");
+   TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "first leaf level != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, node->parent,
+                                    "first leaf parent != par_n");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(
+      BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+      node->flags, "node flags incorrect");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev, "prev of first leaf not 0");
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
@@ -232,7 +253,14 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
       TEST_ASSERT_EQUAL_UINT32_MESSAGE(
          bptr->node_bound.leaf.up - 1, node->key_count,
          "leaf node not full");
-      // TODO: check other members of node
+      TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "node is_leaf not true");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+         _node_brch_vals_get(bptr, par_n, brch_i + 1), node->node_idx,
+         "node->node_idx incorrect");
+      TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "node->level != 0");
+      TEST_ASSERT_BITS_HIGH_MESSAGE(
+         BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+         node->flags, "node flags incorrect");
       TEST_ASSERT_EQUAL_MESSAGE(
          temp->tools->node.cast_i64(par_n->keys + bptr->key_size * brch_i),
          temp->tools->node.cast_i64(node->keys),
@@ -260,6 +288,17 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch right internal node");
    bptr_node_unload(bptr, par_n);
    par_n = node;
+   TEST_ASSERT_FALSE_MESSAGE(par_n->is_leaf, "right brch is_leaf should be false");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      _node_brch_vals_get(bptr, root_n, 1), par_n->node_idx,
+      "right brch node_idx incorrect");
+   TEST_ASSERT_EQUAL_MESSAGE(1, par_n->level, "right brch level != 1");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(root_n->node_idx, par_n->parent,
+                                    "right brch parent != root_n");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, par_n->flags,
+                                 "right brch flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, par_n->flags,
+                                "right brch flags has LEAF set");
    node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
    TEST_ASSERT_NOT_NULL_MESSAGE(node,
                                 "failed to fetch 0th child of right brch");
@@ -271,7 +310,14 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    if (par_n->key_count > 1)  // spec. case: right brch has only 2 children
       TEST_ASSERT_EQUAL_MESSAGE(bptr->node_bound.leaf.up - 1, node->key_count,
                                 "leaf node not full");
-   // TODO: check other members of node
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "node is_leaf not true");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      _node_brch_vals_get(bptr, par_n, 0), node->node_idx,
+      "node->node_idx incorrect");
+   TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "node->level != 0");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(
+      BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+      node->flags, "node flags incorrect");
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
       TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
@@ -298,7 +344,14 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
          TEST_ASSERT_EQUAL_UINT32_MESSAGE(
             bptr->node_bound.leaf.up - 1, node->key_count,
             "leaf node not full");
-         // TODO: check other members of node
+         TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "node is_leaf not true");
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+            _node_brch_vals_get(bptr, par_n, brch_i + 1), node->node_idx,
+            "node->node_idx incorrect");
+         TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "node->level != 0");
+         TEST_ASSERT_BITS_HIGH_MESSAGE(
+            BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+            node->flags, "node flags incorrect");
          TEST_ASSERT_EQUAL_MESSAGE(
             temp->tools->node.cast_i64(par_n->keys + bptr->key_size * brch_i),
             temp->tools->node.cast_i64(node->keys),
@@ -341,6 +394,16 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
       next_n->key_count, node->key_count,
       "node has less key than new_n after split");
+   TEST_ASSERT_TRUE_MESSAGE(next_n->is_leaf, "last node is_leaf not true");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      _node_brch_vals_get(bptr, par_n, par_n->key_count), next_n->node_idx,
+      "last node node_idx incorrect");
+   TEST_ASSERT_EQUAL_MESSAGE(0, next_n->level, "last node level != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, next_n->parent,
+                                    "last node parent != par_n");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(
+      BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+      next_n->flags, "last node flags incorrect");
    for (struct bptr_node *n_arr[2] = {node, next_n},
                          **it = n_arr, **ed = n_arr + 2;
         it < ed; it++)
