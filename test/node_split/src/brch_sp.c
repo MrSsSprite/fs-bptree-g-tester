@@ -22,6 +22,7 @@ int temp_instantiate
   char *dst_path, size_t dst_path_sz);
 void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm);
 void test_sing_brch_split_beg(struct bptr_temp *temp, const char *fnm);
+void test_sing_brch_split_iter(struct bptr_temp *temp);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -83,12 +84,27 @@ void test_brch_split(void)
     {
       for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
            tp_it < tp_mx; tp_it++)
+         test_sing_brch_split_iter(test_matrix[m_it] + tp_it);
+    }
+
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
        {
          char path[256];
          _bptr_path_subdir(path, sizeof(path),
                            test_matrix[m_it][tp_it].fnm, "temp");
          TEST_ASSERT_EQUAL_MESSAGE(0, remove(path),
                                    "failed to remove template");
+         /* Also clean up stale directory at instantiation dest path */
+         {
+            char dpath[256];
+            snprintf(dpath, sizeof(dpath), "bptr_files/temp_%s",
+                     test_matrix[m_it][tp_it].fnm);
+            rmdir(dpath);
+         }
        }
     }
 }
@@ -767,10 +783,100 @@ void test_sing_brch_split_beg(struct bptr_temp *temp, const char *fnm)
    bptr_node_unload(bptr, root_n);
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
 }
+
+
+// Iterate over all insertion positions from before all keys (pos=0, key=1)
+// to after all keys in the leftmost leaf (pos=k, key=2k+1). For each position:
+// instantiate, split the leftmost leaf, verify structural invariants, cleanup.
+void test_sing_brch_split_iter(struct bptr_temp *temp)
+{
+   char path[256];
+   struct bptr *bptr;
+   uint32_t k;
+
+   // Determine leaf capacity.
+   // Create a one-shot bptr to inspect node_bound, then discard.
+   // Use a unique sub-path to avoid colliding with any stale artifacts.
+   TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0,
+      snprintf(path, sizeof(path), "bptr_files/_k_%s", temp->fnm),
+      "snprintf path failure");
+   rmdir(path);  // defensive
+   {
+      struct bptr *kbptr = bptr_init(path, temp->is_lite,
+                                     temp->node_sz, temp->key_sz,
+                                     temp->val_sz, temp->cache_cap,
+                                     temp->cmp);
+      TEST_ASSERT_NOT_NULL_MESSAGE(kbptr, "bptr_init for k determination");
+      k = kbptr->node_bound.leaf.up - 1;
+      TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(kbptr), "unload k bptr");
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path), "remove k bptr");
+   }
+
+   for (uint32_t pos = 0; pos <= k; pos++)
+    {
+      struct bptr_node *par_n, *node, *next_n;
+
+      // Defensively clean up any stale directory left from a prior run
+      rmdir(path);
+      // (Re-)instantiate a fresh copy of the template
+      TEST_ASSERT_EQUAL_MESSAGE(0,
+         temp_instantiate(temp, "temp", path, sizeof(path)),
+         "temp_instantiate failure");
+
+      // Load, split, verify, cleanup in a tight scope
+      bptr = bptr_load(path, temp->cache_cap, temp->cmp);
+      TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
+      TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
+
+      par_n = bptr_node_fetch(bptr, bptr->root_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch root");
+
+      // Fetch leftmost leaf
+      node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leftmost leaf");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(k, node->key_count,
+                                       "leftmost leaf not full");
+
+      // Split with key=pos*2+1 that inserts at position pos
+      bptr_node_t n_idx =
+         bptr_node_split(bptr, node,
+                         temp->tools->node.key_wrapper_i64(pos * 2 + 1),
+                         temp->tools->node.val_wrapper_i64(pos * 2 + 1));
+      TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, n_idx,
+                                           "bptr_node_split failure");
+
+      // Verify split leaf nodes
+      next_n = bptr_node_fetch(bptr, n_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to load new node");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+         bptr->node_bound.leaf.up, node->key_count + next_n->key_count,
+         "sum of key_count incorrect");
+      bptr_node_unload(bptr, next_n);
+      bptr_node_unload(bptr, node);
+
+      // Verify new root
+      TEST_ASSERT_NOT_EQUAL_HEX64_MESSAGE(par_n->node_idx, bptr->root_idx,
+                                          "par_n is still root after split");
+      struct bptr_node *root_n = bptr_node_fetch(bptr, bptr->root_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(root_n, "failed to fetch new root");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, root_n->key_count,
+                                       "root_n->key_count != 1");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx,
+         _node_brch_vals_get(bptr, root_n, 0),
+         "par_n != first child of root_n");
+      bptr_node_unload(bptr, root_n);
+      bptr_node_unload(bptr, par_n);
+
+      TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr),
+                                "Failed to bptr_unload");
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path),
+                                    "failed to remove instantiated template");
+    }
+}
 /*---------------------------- Test Processes END ----------------------------*/
 
 
-/*---------------------------- Private Utilities -----------------------------*/
+
 void _bptr_full_brch_create(struct bptr_temp *temp)
 {
    char path[256];
