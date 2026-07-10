@@ -23,6 +23,11 @@ int temp_instantiate
 void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm);
 void test_sing_brch_split_beg(struct bptr_temp *temp, const char *fnm);
 void test_sing_brch_split_iter(struct bptr_temp *temp);
+void _bptr_full_brch_casc_create(struct bptr_temp *temp);
+void _bptr_full_brch_casc_verify(struct bptr_temp *temp);
+void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm);
+void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm);
+void test_casc_brch_split_iter(struct bptr_temp *temp);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -102,6 +107,138 @@ void test_brch_split(void)
          {
             char dpath[256];
             snprintf(dpath, sizeof(dpath), "bptr_files/temp_%s",
+                     test_matrix[m_it][tp_it].fnm);
+            rmdir(dpath);
+         }
+       }
+    }
+}
+
+
+void test_casc_brch_split(void)
+{
+   // Use only the smallest-fanout configs: lite_128, norm_128.
+   // Larger configs create massive trees that are too slow with
+   // the current cache size.
+   struct bptr_temp *test_matrix[] = { lite_temps_iu + 1, norm_temps_iu + 1 };
+   size_t test_sz_matrix[] = { 1, 1 };
+   puts("Test Unit: Cascading Internal Node Split (test_casc_brch_split)");
+
+   // Create and verify template .bptr files
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+       {
+         _bptr_full_brch_casc_create(test_matrix[m_it] + tp_it);
+         _bptr_full_brch_casc_verify(test_matrix[m_it] + tp_it);
+       }
+    }
+
+   // test_casc_brch_split_end
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+       {
+         char src[256], dst[256];
+         snprintf(src, sizeof(src), "bptr_files/temp_casc/%s",
+                  test_matrix[m_it][tp_it].fnm);
+         snprintf(dst, sizeof(dst), "bptr_files/temp_casc_%s",
+                  test_matrix[m_it][tp_it].fnm);
+         // Copy template to working copy (simple file copy)
+         {
+            char buf[4096];
+            int sfd = open(src, O_RDONLY);
+            TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, sfd, "open src");
+            struct stat st;
+            fstat(sfd, &st);
+            int dfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+            TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, dfd, "open dst");
+            ssize_t n;
+            while ((n = read(sfd, buf, sizeof(buf))) > 0)
+             {
+               ssize_t written;
+               char *p = buf;
+               while (n > 0 && (written = write(dfd, p, n)) > 0)
+                { p += written; n -= written; }
+               TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, (int)written,
+                  "write failure");
+             }
+            close(sfd);
+            close(dfd);
+         }
+         test_casc_brch_split_end(test_matrix[m_it] + tp_it, dst);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(dst),
+            "failed to remove instantiated template");
+       }
+    }
+
+   // test_casc_brch_split_beg
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+       {
+         char src[256], dst[256];
+         snprintf(src, sizeof(src), "bptr_files/temp_casc/%s",
+                  test_matrix[m_it][tp_it].fnm);
+         snprintf(dst, sizeof(dst), "bptr_files/temp_casc_%s",
+                  test_matrix[m_it][tp_it].fnm);
+         {
+            char buf[4096];
+            int sfd = open(src, O_RDONLY);
+            TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, sfd, "open src");
+            struct stat st;
+            fstat(sfd, &st);
+            int dfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+            TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, dfd, "open dst");
+            ssize_t n;
+            while ((n = read(sfd, buf, sizeof(buf))) > 0)
+             {
+               ssize_t written;
+               char *p = buf;
+               while (n > 0 && (written = write(dfd, p, n)) > 0)
+                { p += written; n -= written; }
+               TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, (int)written,
+                  "write failure");
+             }
+            close(sfd);
+            close(dfd);
+         }
+         test_casc_brch_split_beg(test_matrix[m_it] + tp_it, dst);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(dst),
+            "failed to remove instantiated template");
+       }
+    }
+
+   // test_casc_brch_split_iter
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+         test_casc_brch_split_iter(test_matrix[m_it] + tp_it);
+    }
+
+   // Cleanup
+   for (size_t m_it = 0, m_mx = sizeof(test_matrix)/sizeof(*test_matrix);
+        m_it < m_mx; m_it++)
+    {
+      for (size_t tp_it = 0, tp_mx = test_sz_matrix[m_it];
+           tp_it < tp_mx; tp_it++)
+       {
+         char path[256];
+         snprintf(path, sizeof(path), "bptr_files/temp_casc/%s",
+                  test_matrix[m_it][tp_it].fnm);
+         TEST_ASSERT_EQUAL_MESSAGE(0, remove(path),
+                                   "failed to remove template");
+         {
+            char dpath[256];
+            snprintf(dpath, sizeof(dpath), "bptr_files/temp_casc_%s",
                      test_matrix[m_it][tp_it].fnm);
             rmdir(dpath);
          }
@@ -1035,7 +1172,7 @@ int temp_instantiate
    ssize_t n;
    struct stat st;
 
-   _bptr_path_subdir(path, sizeof(path), temp->fnm, "temp");
+   _bptr_path_subdir(path, sizeof(path), temp->fnm, prefix);
    sfd = open(path, O_RDONLY);
    if (sfd < 0) return -1;
 
@@ -1059,5 +1196,836 @@ int temp_instantiate
    if (n < 0) { close(dfd); return -1; }
    close(dfd);
    return 0;
+}
+void _bptr_full_brch_casc_create(struct bptr_temp *temp)
+{
+   char path[256];
+   struct bptr *bptr;
+   struct bptr_node *root_n, *l1_n, *node;
+   int64_t i = 0;
+
+   // Manually build path and create directory to work around
+   // _bptr_path_subdir's null-termination bug for longer subdirs.
+   snprintf(path, sizeof(path), "bptr_files/temp_casc/%s", temp->fnm);
+   mkdir("bptr_files", 0755);
+   mkdir("bptr_files/temp_casc", 0755);
+   if (access(path, F_OK) == 0) return;
+   bptr = bptr_init(path, temp->is_lite, temp->node_sz, temp->key_sz,
+                    temp->val_sz, temp->cache_cap, temp->cmp);
+   TEST_ASSERT_MESSAGE(bptr, "failed at bptr_init");
+
+   // TEMPORARY: early return to test if crash is in tree creation
+   bptr_unload(bptr);
+   return;
+   TEST_ASSERT_MESSAGE(bptr, "failed at _bptr_create");
+
+   uint32_t brch_full = bptr->node_bound.brch.up - 1;
+   uint32_t leaf_full = bptr->node_bound.leaf.up - 1;
+
+   // Create nodes bottom-up to establish correct levels/height.
+   // bptr_node_new(bptr, 0) bumps self->height and assigns
+   // node->level = previous height. We need: leaf(0), L1(1), root(2).
+
+   // First leaf (parent=0) -> level=0, height=1
+   node = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "bptr_node_new failure");
+   node->prev = 0;
+
+   // First L1 (parent=0) -> level=1, height=2
+   l1_n = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL_MESSAGE(l1_n, "bptr_node_new failure");
+   l1_n->prev = 0;
+
+   // Root (parent=0) -> level=2, height=3
+   root_n = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL_MESSAGE(root_n, "bptr_node_new failure");
+   root_n->prev = root_n->next = 0;
+   bptr->root_idx = root_n->node_idx;
+   bptr->node_cnt++;
+
+   // Fix parent pointers for the first leaf and L1
+   node->parent = l1_n->node_idx;
+   l1_n->parent = root_n->node_idx;
+
+   // Link: root[0] = L1, L1[0] = leaf
+   _bptr_val_ins_ptr(root_n, l1_n->node_idx, 0, bptr->is_lite);
+   _bptr_val_ins_ptr(l1_n, node->node_idx, 0, bptr->is_lite);
+   bptr->node_cnt += 2;
+
+   // Fill first leaf
+   for (uint32_t leaf_i = 0; leaf_i < leaf_full; leaf_i++, i++)
+      _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
+   bptr->record_cnt += node->key_count;
+
+   // Remaining leaves of first L1
+   for (uint32_t brch_i = 0; brch_i < brch_full; brch_i++)
+    {
+      struct bptr_node *next_n = bptr_node_new(bptr, l1_n->node_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "bptr_node_new failure");
+      node->next = next_n->node_idx;
+      next_n->prev = node->node_idx;
+      bptr_node_unload(bptr, node);
+      node = next_n;
+
+      for (uint32_t leaf_i = 0; leaf_i < leaf_full; leaf_i++, i++)
+         _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
+      bptr->record_cnt += node->key_count;
+      bptr->node_cnt++;
+
+      _bptr_kv_ins_i64(l1_n, temp->tools,
+                       temp->tools->node.cast_i64(node->keys),
+                       node->node_idx, brch_i, bptr->is_lite);
+    }
+   node->next = 0;
+   bptr_node_unload(bptr, node);
+
+   // Remaining L1 nodes and their leaves
+   for (uint32_t root_i = 0; root_i < brch_full; root_i++)
+    {
+      struct bptr_node *prev_l1 = l1_n;
+      l1_n = bptr_node_new(bptr, root_n->node_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(l1_n, "bptr_node_new failure");
+      prev_l1->next = l1_n->node_idx;
+      l1_n->prev = prev_l1->node_idx;
+      bptr_node_unload(bptr, prev_l1);
+      bptr->node_cnt++;
+
+      // First leaf of this L1
+      node = bptr_node_new(bptr, l1_n->node_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(node, "bptr_node_new failure");
+      node->prev = 0;
+      for (uint32_t leaf_i = 0; leaf_i < leaf_full; leaf_i++, i++)
+         _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
+      bptr->record_cnt += node->key_count;
+      bptr->node_cnt++;
+      _bptr_val_ins_ptr(l1_n, node->node_idx, 0, bptr->is_lite);
+
+      // Remaining leaves of this L1
+      for (uint32_t brch_i = 0; brch_i < brch_full; brch_i++)
+       {
+         struct bptr_node *next_n = bptr_node_new(bptr, l1_n->node_idx);
+         TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "bptr_node_new failure");
+         node->next = next_n->node_idx;
+         next_n->prev = node->node_idx;
+         bptr_node_unload(bptr, node);
+         node = next_n;
+
+         for (uint32_t leaf_i = 0; leaf_i < leaf_full; leaf_i++, i++)
+            _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
+         bptr->record_cnt += node->key_count;
+         bptr->node_cnt++;
+
+         _bptr_kv_ins_i64(l1_n, temp->tools,
+                          temp->tools->node.cast_i64(node->keys),
+                          node->node_idx, brch_i, bptr->is_lite);
+       }
+      node->next = 0;
+      bptr_node_unload(bptr, node);
+
+      // Promote L1 into root: key = first key of L1's first leaf
+      {
+         struct bptr_node *fl = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1_n, 0));
+         TEST_ASSERT_NOT_NULL_MESSAGE(fl, "failed to fetch first leaf");
+         _bptr_kv_ins_i64(root_n, temp->tools,
+                          temp->tools->node.cast_i64(fl->keys),
+                          l1_n->node_idx, root_i, bptr->is_lite);
+         bptr_node_unload(bptr, fl);
+      }
+    }
+   l1_n->next = 0;
+   bptr_node_unload(bptr, l1_n);
+   bptr_node_unload(bptr, root_n);
+
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "bptr_unload failure");
+}
+
+
+void _bptr_full_brch_casc_verify(struct bptr_temp *temp)
+{
+   char path[256];
+   struct bptr *bptr;
+   struct bptr_node *root_n, *l1_n, *node;
+   int64_t i = 0;
+
+   snprintf(path, sizeof(path), "bptr_files/temp_casc/%s", temp->fnm);
+   bptr = bptr_load(path, 256, temp->cmp);
+   TEST_ASSERT_MESSAGE(bptr, "failed at bptr_load");
+
+   uint32_t brch_full = bptr->node_bound.brch.up - 1;
+   uint32_t leaf_full = bptr->node_bound.leaf.up - 1;
+
+   TEST_ASSERT_EQUAL_MESSAGE(3, bptr->height, "height != 3");
+   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root index == 0");
+
+   root_n = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(root_n, "failed to fetch root");
+   TEST_ASSERT_FALSE_MESSAGE(root_n->is_leaf, "root should not be leaf");
+   TEST_ASSERT_EQUAL_MESSAGE(brch_full, root_n->key_count, "root not full");
+   TEST_ASSERT_EQUAL_MESSAGE(2, root_n->level, "root level != 2");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, root_n->flags,
+                                  "root flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, root_n->flags,
+                                 "root flags has LEAF set");
+
+   // Verify each L1 and its leaves
+   for (uint32_t root_i = 0; root_i <= brch_full; root_i++)
+    {
+      l1_n = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, root_i));
+      TEST_ASSERT_NOT_NULL_MESSAGE(l1_n, "failed to fetch L1 node");
+      TEST_ASSERT_FALSE_MESSAGE(l1_n->is_leaf, "L1 should not be leaf");
+      TEST_ASSERT_EQUAL_MESSAGE(brch_full, l1_n->key_count, "L1 not full");
+      TEST_ASSERT_EQUAL_MESSAGE(1, l1_n->level, "L1 level != 1");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(root_n->node_idx, l1_n->parent,
+                                        "L1 parent != root");
+      TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, l1_n->flags,
+                                     "L1 flags missing VALID");
+      TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, l1_n->flags,
+                                    "L1 flags has LEAF set");
+
+      if (root_i > 0)
+       {
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+            _node_brch_vals_get(bptr, root_n, root_i - 1), l1_n->prev,
+            "L1 prev linkage incorrect");
+         if (root_i < brch_full)
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+               _node_brch_vals_get(bptr, root_n, root_i + 1), l1_n->next,
+               "L1 next linkage incorrect");
+       }
+      else
+       {
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, l1_n->prev,
+                                           "first L1 prev != 0");
+         if (brch_full > 0)
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+               _node_brch_vals_get(bptr, root_n, 1), l1_n->next,
+               "first L1 next linkage incorrect");
+       }
+
+      // Check last L1's next == 0
+      if (root_i == brch_full)
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, l1_n->next,
+            "last L1 next != 0");
+
+      // Verify each leaf of this L1
+      for (uint32_t brch_i = 0; brch_i <= brch_full; brch_i++)
+       {
+         node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1_n, brch_i));
+         TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leaf");
+         TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leaf not leaf");
+         TEST_ASSERT_EQUAL_UINT32_MESSAGE(leaf_full, node->key_count,
+                                           "leaf not full");
+         TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "leaf level != 0");
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(l1_n->node_idx, node->parent,
+                                           "leaf parent != L1");
+         TEST_ASSERT_BITS_HIGH_MESSAGE(
+            BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+            node->flags, "leaf flags incorrect");
+
+         if (brch_i > 0)
+          {
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+               _node_brch_vals_get(bptr, l1_n, brch_i - 1), node->prev,
+               "leaf prev linkage incorrect");
+            if (brch_i < brch_full)
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+                  _node_brch_vals_get(bptr, l1_n, brch_i + 1), node->next,
+                  "leaf next linkage incorrect");
+          }
+         else
+          {
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
+                                              "first leaf prev != 0");
+            if (brch_full > 0)
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+                  _node_brch_vals_get(bptr, l1_n, 1), node->next,
+                  "first leaf next linkage incorrect");
+          }
+
+         // Check last leaf's next == 0
+         if (brch_i == brch_full)
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->next,
+               "last leaf next != 0");
+
+         // Verify promoted key matches first key of leaf
+         if (brch_i > 0)
+            TEST_ASSERT_EQUAL_MESSAGE(
+               temp->tools->node.cast_i64(l1_n->keys + bptr->key_size * (brch_i - 1)),
+               temp->tools->node.cast_i64(node->keys),
+               "promoted key in L1 does not match first key of leaf");
+
+         for (uint32_t leaf_i = 0; leaf_i < leaf_full; leaf_i++, i++)
+          {
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(
+               i * 2 + 2,
+               temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+               "leaf key not match");
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(
+               i * 3 + 3,
+               temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+               "leaf val not match");
+          }
+         bptr_node_unload(bptr, node);
+       }
+      bptr_node_unload(bptr, l1_n);
+    }
+   bptr_node_unload(bptr, root_n);
+
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "bptr_unload failure");
+}
+
+
+// Trigger a leaf split in a HEIGHT-3 tree that causes cascading splits:
+// leaf -> L1 -> root all split. The spawned leaf will be the rightmost node.
+void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
+{
+   struct bptr *bptr = bptr_load(fnm ? fnm : temp->fnm,
+                                  temp->cache_cap, temp->cmp);
+   struct bptr_node *par_n, *node, *root_n;
+
+   TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
+   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
+
+   uint32_t brch_full = bptr->node_bound.brch.up - 1;
+   uint32_t leaf_full = bptr->node_bound.leaf.up - 1;
+
+   TEST_ASSERT_EQUAL_MESSAGE(3, bptr->height, "pre-split height != 3");
+
+   root_n = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(root_n, "failed to fetch root");
+   TEST_ASSERT_EQUAL_MESSAGE(brch_full, root_n->key_count, "root not full");
+   TEST_ASSERT_EQUAL_MESSAGE(2, root_n->level, "root level != 2");
+
+   // Navigate to rightmost leaf: root last child -> L1 last child -> leaf
+   par_n = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, brch_full));
+   TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch rightmost L1");
+   TEST_ASSERT_EQUAL_MESSAGE(brch_full, par_n->key_count, "rightmost L1 not full");
+   TEST_ASSERT_EQUAL_MESSAGE(1, par_n->level, "rightmost L1 level != 1");
+
+   node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, brch_full));
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch rightmost leaf");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(leaf_full, node->key_count,
+                                     "rightmost leaf not full");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "rightmost leaf not leaf");
+   TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "rightmost leaf level != 0");
+
+   // Verify keys/values in rightmost leaf before split and compute total keys
+   int64_t total_keys =
+      (brch_full + 1) * (brch_full + 1) * leaf_full;
+   int64_t i = total_keys - leaf_full;
+   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
+    {
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 2 + 2,
+         temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         "Invalid node (key) before split");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 3 + 3,
+         temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         "Invalid node (value) before split");
+    }
+
+   // Split: insert key at end of rightmost leaf (i = total_keys)
+   bptr_node_t n_idx =
+      bptr_node_split(bptr, node,
+                      temp->tools->node.key_wrapper_i64(total_keys * 2 + 2),
+                      temp->tools->node.val_wrapper_i64(total_keys * 3 + 3));
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, n_idx, "bptr_node_split failure");
+
+   // After cascading split, height should be 4
+   TEST_ASSERT_EQUAL_MESSAGE(4, bptr->height, "post-split height != 4");
+
+   // Verify new root
+   struct bptr_node *new_root = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(new_root, "failed to fetch new root");
+   TEST_ASSERT_EQUAL_MESSAGE(3, new_root->level, "new root level != 3");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, new_root->key_count,
+                                     "new root key_count != 1");
+   TEST_ASSERT_FALSE_MESSAGE(new_root->is_leaf, "new root should not be leaf");
+
+   // New root's two children are the split halves of the old root
+   struct bptr_node *left_brch =
+      bptr_node_fetch(bptr, _node_brch_vals_get(bptr, new_root, 0));
+   struct bptr_node *right_brch =
+      bptr_node_fetch(bptr, _node_brch_vals_get(bptr, new_root, 1));
+   TEST_ASSERT_NOT_NULL_MESSAGE(left_brch, "failed to fetch left child of new root");
+   TEST_ASSERT_NOT_NULL_MESSAGE(right_brch, "failed to fetch right child of new root");
+
+   TEST_ASSERT_EQUAL_MESSAGE(2, left_brch->level, "left brch level != 2");
+   TEST_ASSERT_EQUAL_MESSAGE(2, right_brch->level, "right brch level != 2");
+   TEST_ASSERT_FALSE_MESSAGE(left_brch->is_leaf,
+                              "left brch should not be leaf");
+   TEST_ASSERT_FALSE_MESSAGE(right_brch->is_leaf,
+                              "right brch should not be leaf");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+      brch_full, left_brch->key_count + right_brch->key_count,
+      "left + right brch key_count != brch_full");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(new_root->node_idx, left_brch->parent,
+                                     "left brch parent != new root");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(new_root->node_idx, right_brch->parent,
+                                     "right brch parent != new root");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, left_brch->prev,
+                                     "left brch prev != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(right_brch->node_idx, left_brch->next,
+                                     "left brch next != right brch");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(left_brch->node_idx, right_brch->prev,
+                                     "right brch prev != left brch");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, right_brch->next,
+                                     "right brch next != 0");
+
+   bptr_node_unload(bptr, root_n);
+   root_n = NULL;
+
+   // Walk all leaves in order, verifying data integrity
+   i = 0;
+   int64_t leaf_count = 0;
+   struct bptr_node *cur_brch = left_brch;
+   struct bptr_node *prev_leaf = NULL;
+
+   while (cur_brch)
+    {
+      // Verify cur_brch is an internal node at level 2
+      TEST_ASSERT_FALSE_MESSAGE(cur_brch->is_leaf, "cur_brch should not be leaf");
+      TEST_ASSERT_EQUAL_MESSAGE(2, cur_brch->level, "cur_brch level != 2");
+
+      // Walk L1 children of this brch
+      for (uint32_t brch_i = 0; brch_i <= cur_brch->key_count; brch_i++)
+       {
+         struct bptr_node *l1 =
+            bptr_node_fetch(bptr, _node_brch_vals_get(bptr, cur_brch, brch_i));
+         TEST_ASSERT_NOT_NULL_MESSAGE(l1, "failed to fetch L1");
+         TEST_ASSERT_FALSE_MESSAGE(l1->is_leaf, "L1 should not be leaf");
+         TEST_ASSERT_EQUAL_MESSAGE(1, l1->level, "L1 level != 1");
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(cur_brch->node_idx, l1->parent,
+                                           "L1 parent != cur_brch");
+
+         // Verify that L1 promoted key matches its first leaf's first key
+         struct bptr_node *first_leaf_l1 =
+            bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1, 0));
+         if (brch_i > 0)
+            TEST_ASSERT_EQUAL_MESSAGE(
+               temp->tools->node.cast_i64(cur_brch->keys + bptr->key_size * (brch_i - 1)),
+               temp->tools->node.cast_i64(first_leaf_l1->keys),
+               "promoted key in brch does not match first key of L1's first leaf");
+         bptr_node_unload(bptr, first_leaf_l1);
+
+         // Walk leaves of this L1
+         for (uint32_t lf_i = 0; lf_i <= l1->key_count; lf_i++)
+          {
+            node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1, lf_i));
+            TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leaf");
+            TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leaf not leaf");
+            TEST_ASSERT_EQUAL_MESSAGE(0, node->level, "leaf level != 0");
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(l1->node_idx, node->parent,
+                                              "leaf parent != L1");
+
+            // Verify leaf prev/next linkage
+            if (prev_leaf)
+             {
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(prev_leaf->node_idx, node->prev,
+                  "leaf prev linkage incorrect");
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, prev_leaf->next,
+                  "leaf next linkage incorrect");
+             }
+            else
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
+                  "first leaf prev != 0");
+
+            // Verify keys/values
+            for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
+             {
+               TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
+                  temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+                  "leaf key not correct");
+               TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
+                  temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+                  "leaf val not correct");
+             }
+
+            bptr_node_unload(bptr, prev_leaf);
+            prev_leaf = node;
+            leaf_count++;
+          }
+
+         // Verify L1 promoted keys match first key of each leaf
+         for (uint32_t lk_i = 0; lk_i < l1->key_count; lk_i++)
+          {
+            struct bptr_node *chk =
+               bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1, lk_i + 1));
+            TEST_ASSERT_NOT_NULL_MESSAGE(chk, "failed to fetch leaf for key check");
+            TEST_ASSERT_EQUAL_MESSAGE(
+               temp->tools->node.cast_i64(l1->keys + bptr->key_size * lk_i),
+               temp->tools->node.cast_i64(chk->keys),
+               "L1 promoted key does not match first key of leaf");
+            bptr_node_unload(bptr, chk);
+          }
+
+         bptr_node_unload(bptr, l1);
+       }
+
+      // Next brch node
+      struct bptr_node *next_brch = NULL;
+      if (cur_brch->next)
+         next_brch = bptr_node_fetch(bptr, cur_brch->next);
+      bptr_node_unload(bptr, cur_brch);
+      cur_brch = next_brch;
+    }
+
+   // Verify last leaf's next == 0
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, prev_leaf->next,
+                                     "last leaf next != 0");
+   bptr_node_unload(bptr, prev_leaf);
+
+   // Total leaf count should match: (brch_full+1)^2 for full nodes before
+   // plus the split added 1 leaf, 1 L1, 1 brch, and 1 new root
+   // Total leaves = (brch_full+1)^2 + 1
+   int64_t expected_leaves = (brch_full + 1) * (brch_full + 1) + 1;
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(expected_leaves, leaf_count,
+                                    "unexpected total leaf count");
+
+   bptr_node_unload(bptr, new_root);
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
+}
+
+
+// Trigger a leaf split in a HEIGHT-3 tree that causes cascading splits.
+// The spawned leaf will be the leftmost node.
+void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
+{
+   struct bptr *bptr = bptr_load(fnm ? fnm : temp->fnm,
+                                  temp->cache_cap, temp->cmp);
+   struct bptr_node *root_n, *l1_n, *node;
+
+   TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
+   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
+
+   uint32_t brch_full = bptr->node_bound.brch.up - 1;
+   uint32_t leaf_full = bptr->node_bound.leaf.up - 1;
+
+   TEST_ASSERT_EQUAL_MESSAGE(3, bptr->height, "pre-split height != 3");
+
+   root_n = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(root_n, "failed to fetch root");
+   TEST_ASSERT_EQUAL_MESSAGE(brch_full, root_n->key_count, "root not full");
+
+   // Navigate to leftmost leaf: root first child -> first L1 -> first leaf
+   l1_n = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, 0));
+   TEST_ASSERT_NOT_NULL_MESSAGE(l1_n, "failed to fetch leftmost L1");
+   TEST_ASSERT_EQUAL_MESSAGE(brch_full, l1_n->key_count, "leftmost L1 not full");
+
+   node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1_n, 0));
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leftmost leaf");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(leaf_full, node->key_count,
+                                     "leftmost leaf not full");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leftmost leaf not leaf");
+
+   // Verify keys/values in leftmost leaf before split
+   int64_t i = 0;
+   for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
+    {
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 2 + 2,
+         temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+         "Invalid node (key) before split");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         i * 3 + 3,
+         temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+         "Invalid node (value) before split");
+    }
+
+   // Split with key=0, val=0 (inserts before all existing keys)
+   bptr_node_t n_idx =
+      bptr_node_split(bptr, node,
+                      temp->tools->node.key_wrapper_i64(0),
+                      temp->tools->node.val_wrapper_i64(0));
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, n_idx, "bptr_node_split failure");
+
+   // After cascading split, height should be 4
+   TEST_ASSERT_EQUAL_MESSAGE(4, bptr->height, "post-split height != 4");
+
+   // Verify new root
+   struct bptr_node *new_root = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(new_root, "failed to fetch new root");
+   TEST_ASSERT_EQUAL_MESSAGE(3, new_root->level, "new root level != 3");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, new_root->key_count,
+                                     "new root key_count != 1");
+
+   // New root's two children
+   struct bptr_node *left_brch =
+      bptr_node_fetch(bptr, _node_brch_vals_get(bptr, new_root, 0));
+   struct bptr_node *right_brch =
+      bptr_node_fetch(bptr, _node_brch_vals_get(bptr, new_root, 1));
+   TEST_ASSERT_NOT_NULL_MESSAGE(left_brch, "failed to fetch left child of new root");
+   TEST_ASSERT_NOT_NULL_MESSAGE(right_brch, "failed to fetch right child of new root");
+
+   TEST_ASSERT_EQUAL_MESSAGE(2, left_brch->level, "left brch level != 2");
+   TEST_ASSERT_EQUAL_MESSAGE(2, right_brch->level, "right brch level != 2");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+      brch_full, left_brch->key_count + right_brch->key_count,
+      "left + right brch key_count != brch_full");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, left_brch->prev,
+                                     "left brch prev != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(right_brch->node_idx, left_brch->next,
+                                     "left brch next != right brch");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(left_brch->node_idx, right_brch->prev,
+                                     "right brch prev != left brch");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, right_brch->next,
+                                     "right brch next != 0");
+
+   bptr_node_unload(bptr, root_n);
+   root_n = NULL;
+
+   // Walk all leaves in order, verifying data integrity
+   // Keys should be in order: the inserted key 0 at position 0, then all
+   // original keys in order. Global index resets due to the insertion.
+   i = -1;  // the inserted key (0) corresponds to i=-1 in the pattern
+   struct bptr_node *prev_leaf = NULL;
+   struct bptr_node *cur_brch = left_brch;
+
+   while (cur_brch)
+    {
+      for (uint32_t brch_i = 0; brch_i <= cur_brch->key_count; brch_i++)
+       {
+         struct bptr_node *l1 =
+            bptr_node_fetch(bptr, _node_brch_vals_get(bptr, cur_brch, brch_i));
+         TEST_ASSERT_NOT_NULL_MESSAGE(l1, "failed to fetch L1");
+
+         for (uint32_t lf_i = 0; lf_i <= l1->key_count; lf_i++)
+          {
+            node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1, lf_i));
+            TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leaf");
+
+            // Verify leaf prev/next linkage
+            if (prev_leaf)
+             {
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(prev_leaf->node_idx, node->prev,
+                  "leaf prev linkage incorrect");
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, prev_leaf->next,
+                  "leaf next linkage incorrect");
+             }
+            else
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
+                  "first leaf prev != 0");
+
+            // Each leaf's keys follow the original i pattern, adjusted
+            // for the insertion of key 0 at position 0 (i=-1 in the pattern)
+            for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
+             {
+               // After insert, first key should be 0 (i=-1 => 0, then i=0 => 2, etc.)
+               TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 2 + 2,
+                  temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+                  "leaf key not correct");
+               // Check that the inserted value 0 appears at i=-1
+               if (i == -1)
+                  TEST_ASSERT_EQUAL_INT64_MESSAGE(
+                     0,
+                     temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+                     "inserted val should be 0");
+               else
+                  TEST_ASSERT_EQUAL_INT64_MESSAGE(i * 3 + 3,
+                     temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+                     "leaf val not correct");
+             }
+
+            bptr_node_unload(bptr, prev_leaf);
+            prev_leaf = node;
+          }
+         bptr_node_unload(bptr, l1);
+       }
+
+      struct bptr_node *next_brch = NULL;
+      if (cur_brch->next)
+         next_brch = bptr_node_fetch(bptr, cur_brch->next);
+      bptr_node_unload(bptr, cur_brch);
+      cur_brch = next_brch;
+    }
+
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, prev_leaf->next,
+                                     "last leaf next != 0");
+   bptr_node_unload(bptr, prev_leaf);
+
+   bptr_node_unload(bptr, new_root);
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "Failed to bptr_unload");
+}
+
+
+// Iterate over all insertion positions from before all keys (pos=0, key=1)
+// to after all keys (pos=k, key=2k+1) in the leftmost leaf. Each insertion
+// causes a 3-layer cascading split (leaf, L1, root).
+void test_casc_brch_split_iter(struct bptr_temp *temp)
+{
+   char path[256];
+   struct bptr *bptr;
+   uint32_t k;
+
+   // Determine leaf capacity
+   TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0,
+      snprintf(path, sizeof(path), "bptr_files/_k_casc_%s", temp->fnm),
+      "snprintf path failure");
+   rmdir(path);  // defensive
+   {
+      struct bptr *kbptr = bptr_init(path, temp->is_lite,
+                                      temp->node_sz, temp->key_sz,
+                                      temp->val_sz, temp->cache_cap,
+                                      temp->cmp);
+      TEST_ASSERT_NOT_NULL_MESSAGE(kbptr, "bptr_init for k determination");
+      k = kbptr->node_bound.leaf.up - 1;
+      TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(kbptr), "unload k bptr");
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path), "remove k bptr");
+   }
+
+   for (uint32_t pos = 0; pos <= k; pos++)
+    {
+      struct bptr_node *par_n, *node;
+
+      // Defensively clean up any stale directory left from a prior run
+      rmdir(path);
+      // (Re-)instantiate a fresh copy of the template
+      {
+         char src[256];
+         snprintf(src, sizeof(src), "bptr_files/temp_casc/%s", temp->fnm);
+         snprintf(path, sizeof(path), "bptr_files/temp_casc_%s", temp->fnm);
+         {
+            char buf[4096];
+            int sfd = open(src, O_RDONLY);
+            TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, sfd, "open src");
+            struct stat st;
+            fstat(sfd, &st);
+            int dfd = open(path, O_WRONLY | O_CREAT | O_TRUNC,
+                           st.st_mode & 0777);
+            TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, dfd, "open dst");
+            ssize_t n;
+            while ((n = read(sfd, buf, sizeof(buf))) > 0)
+             {
+               ssize_t written;
+               char *p = buf;
+               while (n > 0 && (written = write(dfd, p, n)) > 0)
+                { p += written; n -= written; }
+               TEST_ASSERT_GREATER_THAN_INT_MESSAGE(-1, (int)written,
+                  "write failure");
+             }
+            close(sfd);
+            close(dfd);
+         }
+      }
+
+      // Load, split, verify, cleanup in a tight scope
+      bptr = bptr_load(path, temp->cache_cap, temp->cmp);
+      TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
+      TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->root_idx, "root_idx");
+      TEST_ASSERT_EQUAL_MESSAGE(3, bptr->height, "pre-split height != 3");
+
+      // Fetch leftmost leaf: root -> first L1 -> first leaf
+      par_n = bptr_node_fetch(bptr, bptr->root_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch root");
+
+      struct bptr_node *l1_n =
+         bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(l1_n, "failed to fetch leftmost L1");
+
+      node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1_n, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch leftmost leaf");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(k, node->key_count,
+                                        "leftmost leaf not full");
+
+      // Split with key=pos*2+1 that inserts at position pos
+      bptr_node_t n_idx =
+         bptr_node_split(bptr, node,
+                         temp->tools->node.key_wrapper_i64(pos * 2 + 1),
+                         temp->tools->node.val_wrapper_i64(pos * 2 + 1));
+      TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, n_idx,
+                                            "bptr_node_split failure");
+
+      // Verify cascading split: height goes from 3 to 4
+      TEST_ASSERT_EQUAL_MESSAGE(4, bptr->height, "post-split height != 4");
+
+      // Verify new root has 1 key
+      struct bptr_node *new_root =
+         bptr_node_fetch(bptr, bptr->root_idx);
+      TEST_ASSERT_NOT_NULL_MESSAGE(new_root, "failed to fetch new root");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, new_root->key_count,
+                                        "new root key_count != 1");
+      TEST_ASSERT_EQUAL_MESSAGE(3, new_root->level, "new root level != 3");
+      TEST_ASSERT_FALSE_MESSAGE(new_root->is_leaf, "new root should not be leaf");
+
+      // Verify new root's two children are internal nodes at level 2
+      struct bptr_node *left_brch =
+         bptr_node_fetch(bptr, _node_brch_vals_get(bptr, new_root, 0));
+      struct bptr_node *right_brch =
+         bptr_node_fetch(bptr, _node_brch_vals_get(bptr, new_root, 1));
+      TEST_ASSERT_NOT_NULL_MESSAGE(left_brch, "failed to fetch left brch");
+      TEST_ASSERT_NOT_NULL_MESSAGE(right_brch, "failed to fetch right brch");
+      TEST_ASSERT_EQUAL_MESSAGE(2, left_brch->level, "left brch level != 2");
+      TEST_ASSERT_EQUAL_MESSAGE(2, right_brch->level, "right brch level != 2");
+      TEST_ASSERT_FALSE_MESSAGE(left_brch->is_leaf,
+                                 "left brch should not be leaf");
+      TEST_ASSERT_FALSE_MESSAGE(right_brch->is_leaf,
+                                 "right brch should not be leaf");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, left_brch->prev,
+                                        "left brch prev != 0");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(right_brch->node_idx, left_brch->next,
+                                        "left brch next != right brch");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(left_brch->node_idx, right_brch->prev,
+                                        "right brch prev != left brch");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, right_brch->next,
+                                        "right brch next != 0");
+
+      // Verify key/value integrity by walking all leaves
+      struct bptr_node *prev_leaf = NULL;
+      struct bptr_node *cur_brch = left_brch;
+
+      while (cur_brch)
+       {
+         for (uint32_t brch_i = 0; brch_i <= cur_brch->key_count; brch_i++)
+          {
+            struct bptr_node *l1 =
+               bptr_node_fetch(bptr, _node_brch_vals_get(bptr, cur_brch, brch_i));
+            TEST_ASSERT_NOT_NULL_MESSAGE(l1, "failed to fetch L1");
+
+            for (uint32_t lf_i = 0; lf_i <= l1->key_count; lf_i++)
+             {
+               struct bptr_node *lf =
+                  bptr_node_fetch(bptr, _node_brch_vals_get(bptr, l1, lf_i));
+               TEST_ASSERT_NOT_NULL_MESSAGE(lf, "failed to fetch leaf");
+               TEST_ASSERT_TRUE_MESSAGE(lf->is_leaf, "leaf not leaf");
+
+               if (prev_leaf)
+                {
+                  TEST_ASSERT_EQUAL_UINT64_MESSAGE(prev_leaf->node_idx, lf->prev,
+                     "leaf prev linkage incorrect");
+                  TEST_ASSERT_EQUAL_UINT64_MESSAGE(lf->node_idx, prev_leaf->next,
+                     "leaf next linkage incorrect");
+                }
+               else
+                  TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, lf->prev,
+                     "first leaf prev != 0");
+
+               bptr_node_unload(bptr, prev_leaf);
+               prev_leaf = lf;
+             }
+            bptr_node_unload(bptr, l1);
+          }
+
+         struct bptr_node *next_brch = NULL;
+         if (cur_brch->next)
+            next_brch = bptr_node_fetch(bptr, cur_brch->next);
+         bptr_node_unload(bptr, cur_brch);
+         cur_brch = next_brch;
+       }
+
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, prev_leaf->next,
+                                        "last leaf next != 0");
+      bptr_node_unload(bptr, prev_leaf);
+
+      bptr_node_unload(bptr, new_root);
+      bptr_node_unload(bptr, par_n);
+      bptr_node_unload(bptr, l1_n);
+      bptr_node_unload(bptr, node);
+
+      TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr),
+                                 "Failed to bptr_unload");
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path),
+                                     "failed to remove instantiated template");
+    }
 }
 /*-------------------------- Private Utilities END ---------------------------*/

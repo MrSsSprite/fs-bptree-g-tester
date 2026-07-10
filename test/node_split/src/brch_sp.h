@@ -3,6 +3,7 @@
 
 /*-------------------------------- Test Units --------------------------------*/
 void test_brch_split(void);
+void test_casc_brch_split(void);
 /*------------------------------ Test Units END ------------------------------*/
 
 #endif
