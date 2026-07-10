@@ -1459,7 +1459,7 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
 
    // Verify keys/values in rightmost leaf before split
    int64_t total_keys =
-      (brch_full + 1) * (brch_full + 1) * leaf_full;
+      (int64_t)(brch_full + 1) * (int64_t)(brch_full + 1) * (int64_t)leaf_full;
    int64_t i = total_keys - leaf_full;
    for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, i++)
     {
@@ -1482,6 +1482,8 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
 
    // After cascading split, height should be 4
    TEST_ASSERT_EQUAL_MESSAGE(4, bptr->height, "post-split height != 4");
+   TEST_ASSERT_NOT_EQUAL_HEX64_MESSAGE(root_n->node_idx, bptr->root_idx,
+                                        "old root is still root after cascading split");
 
    // Verify new root structure after cascading split
    struct bptr_node *new_root = bptr_node_fetch(bptr, bptr->root_idx);
@@ -1508,6 +1510,14 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_EQUAL_MESSAGE(2, right_brch->level, "right brch level != 2");
    TEST_ASSERT_FALSE_MESSAGE(left_brch->is_leaf, "left brch should not be leaf");
    TEST_ASSERT_FALSE_MESSAGE(right_brch->is_leaf, "right brch should not be leaf");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, left_brch->flags,
+                                  "left brch flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, left_brch->flags,
+                                 "left brch flags has LEAF set");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, right_brch->flags,
+                                  "right brch flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, right_brch->flags,
+                                 "right brch flags has LEAF set");
    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
       brch_full, left_brch->key_count + right_brch->key_count,
       "left + right brch key_count != brch_full");
@@ -1566,6 +1576,22 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
                                      "leftmost leaf not full");
    TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leftmost leaf not leaf");
 
+   // Verify keys/values in leftmost leaf before split
+   {
+      int64_t j = 0;
+      for (uint32_t leaf_i = 0; leaf_i < node->key_count; leaf_i++, j++)
+       {
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(
+            j * 2 + 2,
+            temp->tools->node.cast_i64(node->keys + bptr->key_size * leaf_i),
+            "Invalid node (key) before split");
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(
+            j * 3 + 3,
+            temp->tools->node.cast_i64(node->vals + bptr->value_size * leaf_i),
+            "Invalid node (value) before split");
+       }
+   }
+
    // Split with key=0, val=0 (inserts before all existing keys)
    bptr_node_t n_idx =
       bptr_node_split(bptr, node,
@@ -1575,6 +1601,8 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
 
    // After cascading split, height should be 4
    TEST_ASSERT_EQUAL_MESSAGE(4, bptr->height, "post-split height != 4");
+   TEST_ASSERT_NOT_EQUAL_HEX64_MESSAGE(root_n->node_idx, bptr->root_idx,
+                                        "old root is still root after cascading split");
 
    // Verify new root structure after cascading split
    struct bptr_node *new_root = bptr_node_fetch(bptr, bptr->root_idx);
@@ -1601,6 +1629,14 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_EQUAL_MESSAGE(2, right_brch->level, "right brch level != 2");
    TEST_ASSERT_FALSE_MESSAGE(left_brch->is_leaf, "left brch should not be leaf");
    TEST_ASSERT_FALSE_MESSAGE(right_brch->is_leaf, "right brch should not be leaf");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, left_brch->flags,
+                                  "left brch flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, left_brch->flags,
+                                 "left brch flags has LEAF set");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, right_brch->flags,
+                                  "right brch flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, right_brch->flags,
+                                 "right brch flags has LEAF set");
    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
       brch_full, left_brch->key_count + right_brch->key_count,
       "left + right brch key_count != brch_full");
@@ -1691,6 +1727,18 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
 
       // Verify cascading split: height goes from 3 to 4
       TEST_ASSERT_EQUAL_MESSAGE(4, bptr->height, "post-split height != 4");
+      TEST_ASSERT_NOT_EQUAL_HEX64_MESSAGE(root_n->node_idx, bptr->root_idx,
+                                           "old root is still root after cascading split");
+
+      // Verify split leaf plus new leaf sum to leaf.up
+      {
+         struct bptr_node *next_n = bptr_node_fetch(bptr, n_idx);
+         TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to load new node");
+         TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            bptr->node_bound.leaf.up, node->key_count + next_n->key_count,
+            "sum of key_count of node and next_n incorrect");
+         bptr_node_unload(bptr, next_n);
+      }
 
       // Verify new root structure
       struct bptr_node *new_root = bptr_node_fetch(bptr, bptr->root_idx);
@@ -1710,6 +1758,14 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
       TEST_ASSERT_EQUAL_MESSAGE(2, right_brch->level, "right brch level != 2");
       TEST_ASSERT_FALSE_MESSAGE(left_brch->is_leaf, "left brch should not be leaf");
       TEST_ASSERT_FALSE_MESSAGE(right_brch->is_leaf, "right brch should not be leaf");
+      TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, left_brch->flags,
+                                     "left brch flags missing VALID");
+      TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, left_brch->flags,
+                                    "left brch flags has LEAF set");
+      TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, right_brch->flags,
+                                     "right brch flags missing VALID");
+      TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, right_brch->flags,
+                                    "right brch flags has LEAF set");
       TEST_ASSERT_EQUAL_UINT32_MESSAGE(
          brch_full, left_brch->key_count + right_brch->key_count,
          "left + right brch key_count != brch_full");
