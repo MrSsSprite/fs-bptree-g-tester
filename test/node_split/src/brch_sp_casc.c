@@ -334,11 +334,8 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
    // Verify total record count via parent→child traversal
    TEST_ASSERT_EQUAL_INT64_MESSAGE(total_expected, global_i,
       "total records via tree traversal != expected");
-   // bptr->record_cnt may differ due to known over-count in cascading splits
-   if ((uint64_t)total_expected != bptr->record_cnt)
-      printf("  NOTE: bptr->record_cnt=%lu, tree has %ld records"
-             " — record_cnt may be over-counted during cascading splits\n",
-             (unsigned long)bptr->record_cnt, (long)total_expected);
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t)total_expected, bptr->record_cnt,
+      "bptr->record_cnt mismatch after split");
 
    // ---- 5. Verify L1 linked list (end-to-end via prev/next) ----
    {
@@ -379,7 +376,7 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
        }
       // Now cur is the first leaf (prev==0). Walk forwards.
       uint64_t first_leaf_idx = cur;
-      int leaf_chain_count = 0;
+      int64_t chain_records = 0;
       uint64_t prev_idx = 0;
       while (cur != 0)
        {
@@ -389,31 +386,24 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
             "leaf linked list: prev mismatch");
          TEST_ASSERT_EQUAL_MESSAGE(0, leaf->level, "leaf chain: level != 0");
          TEST_ASSERT_TRUE_MESSAGE(leaf->is_leaf, "leaf chain: should be leaf");
-         leaf_chain_count++;
+         chain_records += leaf->key_count;
          prev_idx = cur;
          cur = leaf->next;
          bptr_node_unload(bptr, leaf);
        }
-      // Cross-check: the first leaf under first_l1_idx should match the
-      // chain head. A mismatch indicates child ordering is off in split
-      // nodes (Bug #6: child ordering within split internal nodes).
+      // Cross-check: the global first leaf (via parent→child from
+      // first_l1_idx) must match the chain head found by reverse-walk.
       {
          struct bptr_node *fl1 = bptr_node_fetch(bptr, first_l1_idx);
-         if (fl1) {
-            uint64_t tree_first_leaf = _node_brch_vals_get(bptr, fl1, 0);
-            bptr_node_unload(bptr, fl1);
-            if (tree_first_leaf != first_leaf_idx)
-               printf("  NOTE: tree traversal first leaf=%lu, chain head=%lu"
-                      " — children may be misordered in split nodes\n",
-                      (unsigned long)tree_first_leaf,
-                      (unsigned long)first_leaf_idx);
-         }
+         TEST_ASSERT_NOT_NULL_MESSAGE(fl1,
+            "leaf chain cross-check: failed to fetch first L1");
+         uint64_t tree_first_leaf = _node_brch_vals_get(bptr, fl1, 0);
+         bptr_node_unload(bptr, fl1);
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(first_leaf_idx, tree_first_leaf,
+            "global first leaf != leaf chain head");
       }
-      if (leaf_chain_count * (int64_t)leaf_full < total_expected)
-         printf("  NOTE: leaf chain has %d leaves (%d records), tree has %ld"
-                " records — leaf sibling links may be incomplete\n",
-                leaf_chain_count, leaf_chain_count * (int)leaf_full,
-                (long)total_expected);
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(total_expected, chain_records,
+         "leaf chain record count != total expected");
    }
 
    // ---- 7. Verify L2 linked list ----
@@ -681,11 +671,8 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
    // Verify total record count via parent→child traversal
    TEST_ASSERT_EQUAL_INT64_MESSAGE(total_expected, global_i,
       "total records via tree traversal != expected");
-   // bptr->record_cnt may differ due to known over-count in cascading splits
-   if ((uint64_t)total_expected != bptr->record_cnt)
-      printf("  NOTE: bptr->record_cnt=%lu, tree has %ld records"
-             " — record_cnt may be over-counted during cascading splits\n",
-             (unsigned long)bptr->record_cnt, (long)total_expected);
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t)total_expected, bptr->record_cnt,
+      "bptr->record_cnt mismatch after split");
 
    // ---- 5. Verify L1 linked list (end-to-end via prev/next) ----
    {
@@ -716,7 +703,7 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
       uint64_t leaf_idx = _node_brch_vals_get(bptr, fl1, 0);
       bptr_node_unload(bptr, fl1);
 
-      int leaf_chain_count = 0;
+      int64_t chain_records = 0;
       uint64_t prev_idx = 0;
 
       while (leaf_idx != 0)
@@ -725,16 +712,13 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
          TEST_ASSERT_NOT_NULL_MESSAGE(leaf, "leaf linked list walk: fetch failed");
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(prev_idx, leaf->prev,
             "leaf linked list: prev mismatch");
-         leaf_chain_count++;
+         chain_records += leaf->key_count;
          prev_idx = leaf_idx;
          leaf_idx = leaf->next;
          bptr_node_unload(bptr, leaf);
        }
-      if (leaf_chain_count * (int64_t)leaf_full < total_expected)
-         printf("  NOTE: leaf chain has %d leaves (%d records), tree has %ld"
-                " records — leaf sibling links may be incomplete\n",
-                leaf_chain_count, leaf_chain_count * (int)leaf_full,
-                (long)total_expected);
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(total_expected, chain_records,
+         "leaf chain record count != total expected");
    }
 
    // ---- 7. Verify L2 linked list ----
@@ -1034,11 +1018,8 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
       // Verify total record count and inserted key via parent→child traversal
       TEST_ASSERT_EQUAL_INT64_MESSAGE(total_expected, global_i,
          "total records via tree traversal != expected");
-      // bptr->record_cnt may differ due to known over-count in cascading splits
-      if ((uint64_t)total_expected != bptr->record_cnt)
-         printf("  NOTE: bptr->record_cnt=%lu, tree has %ld records"
-                " — record_cnt may be over-counted during cascading splits\n",
-                (unsigned long)bptr->record_cnt, (long)total_expected);
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t)total_expected,
+         bptr->record_cnt, "bptr->record_cnt mismatch after split");
       TEST_ASSERT_TRUE_MESSAGE(found_inserted_key,
          "inserted key not found in tree traversal");
 
@@ -1071,7 +1052,7 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
          uint64_t leaf_idx = _node_brch_vals_get(bptr, fl1, 0);
          bptr_node_unload(bptr, fl1);
 
-         int leaf_chain_count = 0;
+         int64_t chain_records = 0;
          uint64_t prev_idx = 0;
 
          while (leaf_idx != 0)
@@ -1080,15 +1061,13 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
             TEST_ASSERT_NOT_NULL_MESSAGE(leaf, "leaf linked list walk: fetch failed");
             TEST_ASSERT_EQUAL_UINT64_MESSAGE(prev_idx, leaf->prev,
                "leaf linked list: prev mismatch");
-            leaf_chain_count++;
+            chain_records += leaf->key_count;
             prev_idx = leaf_idx;
             leaf_idx = leaf->next;
             bptr_node_unload(bptr, leaf);
           }
-         if (leaf_chain_count * (int64_t)leaf_full < total_expected)
-            printf("  NOTE: leaf chain has %d leaves, tree has %ld records"
-                   " — leaf sibling links may be incomplete\n",
-                   leaf_chain_count, (long)total_expected);
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(total_expected, chain_records,
+            "leaf chain record count != total expected");
       }
 
       // ---- 7. Verify L2 linked list ----

@@ -267,7 +267,11 @@ void _bptr_full_brch_casc_create(struct bptr_temp *temp)
                        temp->tools->node.cast_i64(node->keys),
                        node->node_idx, brch_i, bptr->is_lite);
     }
-   node->next = 0;
+   // Don't set node->next=0 yet — it will link to the next L1's first
+   // leaf when that L1 is created. Only the very last L1's last leaf
+   // terminates the chain.
+   // Track the last leaf to link leaf chains across L1s.
+   bptr_node_t prev_l1_last_leaf = node->node_idx;
    bptr_node_unload(bptr, node);
 
    // Remaining L1 nodes and their leaves
@@ -281,10 +285,18 @@ void _bptr_full_brch_casc_create(struct bptr_temp *temp)
       bptr_node_unload(bptr, prev_l1);
       bptr->node_cnt++;
 
-      // First leaf of this L1
+      // First leaf of this L1 — link to previous L1's last leaf
       node = bptr_node_new(bptr, l1_n->node_idx);
       TEST_ASSERT_NOT_NULL_MESSAGE(node, "bptr_node_new failure");
-      node->prev = 0;
+      {
+         struct bptr_node *prev_last =
+            bptr_node_fetch(bptr, prev_l1_last_leaf);
+         TEST_ASSERT_NOT_NULL_MESSAGE(prev_last,
+            "failed to fetch prev L1 last leaf");
+         prev_last->next = node->node_idx;
+         node->prev = prev_last->node_idx;
+         bptr_node_unload(bptr, prev_last);
+      }
       for (uint32_t leaf_i = 0; leaf_i < leaf_full; leaf_i++, i++)
          _bptr_kv_ins_i64(node, temp->tools, i * 2 + 2, i * 3 + 3, leaf_i, bptr->is_lite);
       bptr->record_cnt += node->key_count;
@@ -310,7 +322,11 @@ void _bptr_full_brch_casc_create(struct bptr_temp *temp)
                           temp->tools->node.cast_i64(node->keys),
                           node->node_idx, brch_i, bptr->is_lite);
        }
-      node->next = 0;
+      // Link last leaf to next L1's first leaf (handled at top of next
+      // iteration), or terminate chain if this is the very last L1.
+      if (root_i == brch_full - 1)
+         node->next = 0;
+      prev_l1_last_leaf = node->node_idx;
       bptr_node_unload(bptr, node);
 
       // Promote L1 into root: key = first key of L1's first leaf
@@ -425,16 +441,18 @@ void _bptr_full_brch_casc_verify(struct bptr_temp *temp)
           }
          else
           {
-            TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
-                                              "first leaf prev != 0");
+            // Only the very first leaf of the first L1 has prev == 0
+            if (root_i == 0)
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
+                                                 "first leaf prev != 0");
             if (brch_full > 0)
                TEST_ASSERT_EQUAL_UINT64_MESSAGE(
                   _node_brch_vals_get(bptr, l1_n, 1), node->next,
                   "first leaf next linkage incorrect");
           }
 
-         // Check last leaf's next == 0
-         if (brch_i == brch_full)
+         // Only the very last leaf of the last L1 has next == 0
+         if (brch_i == brch_full && root_i == brch_full)
             TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->next,
                "last leaf next != 0");
 
