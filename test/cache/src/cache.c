@@ -220,7 +220,11 @@ void test_cache_capacity_boundaries(void)
    puts("\tCache Capacity Boundaries:");
 
    // --- Test invalid (under-minimum) cache capacities ---
-   puts("\t\tInvalid capacity tests:");
+   // NOTE: cap=0 and cap=1 are rejected by bptr_init's parameter validation
+   // BEFORE bptr_cache_init is reached. These tests validate the bptr_init
+   // guard, not bptr_cache_init boundary handling. The MSB-set pool_cap
+   // guard in bptr_cache_init remains untested by this suite.
+   puts("\t\tInvalid capacity tests (bptr_init parameter validation):");
 
    printf("\t\t  capacity=0...");
    _bptr_path(path, sizeof(path), "cache_bound_0.bptr");
