@@ -182,7 +182,8 @@ void test_cache_data_persistence(void)
    bptr_node_unload(bptr, node_c);
    puts("done.");
 
-   // Re-fetch A from disk — cache miss → evict + load from disk
+   // Re-fetch A from disk — cache miss → evicts B (now the oldest
+   // INACTIVE; B is clean so no flush needed) and loads A from disk
    printf("\t\tRe-fetching evicted node A (expect cache MISS, disk load)...");
    node_a = bptr_node_fetch(bptr, a_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node_a,
