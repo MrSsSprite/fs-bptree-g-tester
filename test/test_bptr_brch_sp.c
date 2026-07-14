@@ -66,6 +66,10 @@ void _bptr_full_brch_create(struct bptr_temp *temp)
    bptr_node_unload(bptr, node);
    bptr_node_unload(bptr, par_n);
 
+   // Verify last leaf terminates the chain
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->next,
+      "last leaf next != 0");
+
    TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "bptr_unload failure");
 }
 
@@ -88,6 +92,27 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
    TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch par_n");
    TEST_ASSERT_EQUAL_MESSAGE(bptr->node_bound.brch.up - 1, par_n->key_count,
                              "par_n not full");
+   // Verify root metadata
+   TEST_ASSERT_FALSE_MESSAGE(par_n->is_leaf, "root should not be leaf");
+   TEST_ASSERT_EQUAL_MESSAGE(1, par_n->level, "root level != 1");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, par_n->parent, "root parent != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, par_n->prev, "root prev != 0");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, par_n->next, "root next != 0");
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, par_n->flags,
+                                  "root flags missing VALID");
+   TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, par_n->flags,
+                                 "root flags has LEAF set");
+
+   // Verify node and record counts
+   {
+      uint64_t expected_node_cnt = bptr->node_bound.brch.up + 1;
+      uint64_t expected_record_cnt =
+         bptr->node_bound.brch.up * (bptr->node_bound.leaf.up - 1);
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(expected_node_cnt, bptr->node_cnt,
+         "node_cnt mismatch");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(expected_record_cnt, bptr->record_cnt,
+         "record_cnt mismatch");
+   }
 
    node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch first child node");
@@ -129,7 +154,7 @@ void _bptr_full_brch_verify(struct bptr_temp *temp)
                                        "child has incorrect parent");
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(
          _node_brch_vals_get(bptr, par_n, brch_i - 1), node->prev,
-         "prev of first child not 0");
+         "prev linkage does not match sibling list in par_n");
       if (brch_i < brch_mx - 1)
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(
             _node_brch_vals_get(bptr, par_n, brch_i + 1), node->next,
