@@ -144,8 +144,12 @@ void test_simp_split_end(struct bptr_temp *temp)
     }
    int64_t key =
       temp->tools->node.cast_i64(node->keys +
-                                 bptr->key_size * (node->key_count - 1));
-   TEST_ASSERT_EQUAL_INT64_MESSAGE(0xFFFFFFFF, key, "child[1] key not match");
+                                 bptr->key_size * (node->key_count - 1)),
+           val =
+      temp->tools->node.cast_i64(node->vals +
+                                 bptr->value_size * (node->key_count - 1));
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(0xFFFFFFFF, key, "child[1] last key not match");
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(0xFFFFFFFF, val, "child[1] last value not match");
    bptr_node_unload(bptr, node);
    /*------------------- Check Correctness after Split END -------------------*/
 
