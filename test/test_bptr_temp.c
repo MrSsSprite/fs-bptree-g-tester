@@ -55,6 +55,13 @@ void _val_ers__##S(struct bptr_node *node, size_t idx) \
 
 
 #define _wrapper_tools_i64__generate(T, S) \
+/**                                                                        \
+ * @brief  Wrap an int64_t value into the storage type T for node I/O.     \
+ *                                                                         \
+ * @warning  Uses a static 2-slot flip-flop buffer — only two wrapped      \
+ *           values (key + val) may be live simultaneously. A third call   \
+ *           in the same expression silently overwrites the first slot.    \
+ */                                                                        \
 void *_wrapper_tools_i64__##S(int64_t inpt) \
 { \
    static T buffer[2]; \
@@ -140,6 +147,11 @@ struct bptr_temp norm_temps[] =
 size_t norm_temps_sz = sizeof(norm_temps)/sizeof(*norm_temps);
 
 
+// NOTE: lite_temps_iu[] and norm_temps_iu[] are byte-identical to
+// lite_temps[] and norm_temps[] above. They exist as separate arrays
+// only to provide independent size variables (lite_temps_iu_sz etc.)
+// for test functions that accept both lite and norm templates with
+// potentially different iteration ranges.
 struct bptr_temp lite_temps_iu[] =
 {
    { "lite_DEF_u32_u32.bptr", 1, BPTR_NODE_BYTE_DEFAULT,
