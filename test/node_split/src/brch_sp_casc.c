@@ -235,14 +235,23 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
       "L2 key_count sum != brch_full");
 
    // ---- 3. Verify new root's separator key ----
-   // TODO: bptr_node_split "promote" is incomplete — the new root's separator
-   // key is not yet set during cascading splits. Re-enable when fixed.
-   // {
-   //    struct bptr_node *r_l1_first = ...
-   //    TEST_ASSERT_EQUAL_INT64_MESSAGE(
-   //       temp->tools->node.cast_i64(new_root->keys),
-   //       temp->tools->node.cast_i64(r_first_leaf->keys), ...);
-   // }
+   // The new root's separator key must equal the first key of the first
+   // leaf in the right L2 subtree (standard B+tree invariant).
+   {
+      struct bptr_node *r_l1 = bptr_node_fetch(bptr,
+         _node_brch_vals_get(bptr, l2_right, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(r_l1, "failed to fetch right L2's first L1");
+      struct bptr_node *r_first_leaf = bptr_node_fetch(bptr,
+         _node_brch_vals_get(bptr, r_l1, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(r_first_leaf,
+         "failed to fetch right L2's first leaf");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         temp->tools->node.cast_i64(new_root->keys),
+         temp->tools->node.cast_i64(r_first_leaf->keys),
+         "new root separator key does not match first key of right subtree");
+      bptr_node_unload(bptr, r_first_leaf);
+      bptr_node_unload(bptr, r_l1);
+   }
 
    // ---- 4. Traverse every node: verify metadata, parent links, and leaf keys/vals ----
    // Track the first L1 node_idx for linked-list walk later
@@ -281,8 +290,19 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
             l1_idx, l1_n->node_idx,
             "L1 node_idx does not match parent's vals entry");
 
-         // TODO: L2 separator key consistency — depends on bptr_node_split
-         // "promote" which is not yet implemented. Re-enable when fixed.
+         // Verify L2 separator key matches first key of L1's first leaf
+         if (l1_i > 0)
+          {
+            struct bptr_node *l1_first_leaf = bptr_node_fetch(bptr,
+               _node_brch_vals_get(bptr, l1_n, 0));
+            TEST_ASSERT_NOT_NULL_MESSAGE(l1_first_leaf,
+               "failed to fetch L1's first leaf for L2 separator check");
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(
+               temp->tools->node.cast_i64(l2_n->keys + bptr->key_size * (l1_i - 1)),
+               temp->tools->node.cast_i64(l1_first_leaf->keys),
+               "L2 separator key does not match first key of L1 subtree");
+            bptr_node_unload(bptr, l1_first_leaf);
+          }
 
          // Verify all leaf children of this L1
          for (uint32_t leaf_i = 0; leaf_i <= l1_n->key_count; leaf_i++)
@@ -305,8 +325,12 @@ void test_casc_brch_split_end(struct bptr_temp *temp, const char *fnm)
                leaf_idx, leaf->node_idx,
                "leaf node_idx does not match L1 vals entry");
 
-            // TODO: L1 separator key consistency — depends on bptr_node_split
-            // "promote" which is not yet implemented. Re-enable when fixed.
+            // Verify L1 separator key matches first key of leaf child
+            if (leaf_i > 0)
+               TEST_ASSERT_EQUAL_INT64_MESSAGE(
+                  temp->tools->node.cast_i64(l1_n->keys + bptr->key_size * (leaf_i - 1)),
+                  temp->tools->node.cast_i64(leaf->keys),
+                  "L1 separator key does not match first key of leaf child");
 
             // Verify all key/value pairs in this leaf (via parent→child traversal)
             for (uint32_t k_i = 0; k_i < leaf->key_count; k_i++, global_i++)
@@ -559,14 +583,23 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
       "L2 key_count sum != brch_full");
 
    // ---- 3. Verify new root's separator key ----
-   // TODO: bptr_node_split "promote" is incomplete — the new root's separator
-   // key is not yet set during cascading splits. Re-enable when fixed.
-   // {
-   //    struct bptr_node *r_l1_first = ...
-   //    TEST_ASSERT_EQUAL_INT64_MESSAGE(
-   //       temp->tools->node.cast_i64(new_root->keys),
-   //       temp->tools->node.cast_i64(r_first_leaf->keys), ...);
-   // }
+   // The new root's separator key must equal the first key of the first
+   // leaf in the right L2 subtree (standard B+tree invariant).
+   {
+      struct bptr_node *r_l1 = bptr_node_fetch(bptr,
+         _node_brch_vals_get(bptr, l2_right, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(r_l1, "failed to fetch right L2's first L1");
+      struct bptr_node *r_first_leaf = bptr_node_fetch(bptr,
+         _node_brch_vals_get(bptr, r_l1, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(r_first_leaf,
+         "failed to fetch right L2's first leaf");
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         temp->tools->node.cast_i64(new_root->keys),
+         temp->tools->node.cast_i64(r_first_leaf->keys),
+         "new root separator key does not match first key of right subtree");
+      bptr_node_unload(bptr, r_first_leaf);
+      bptr_node_unload(bptr, r_l1);
+   }
 
    // ---- 4. Traverse every node: verify metadata, parent links, and leaf keys/vals ----
    uint64_t first_l1_idx = 0;
@@ -602,8 +635,19 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
             l1_idx, l1_n->node_idx,
             "L1 node_idx does not match parent's vals entry");
 
-         // TODO: L2 separator key consistency — depends on bptr_node_split
-         // "promote" which is not yet implemented. Re-enable when fixed.
+         // Verify L2 separator key matches first key of L1's first leaf
+         if (l1_i > 0)
+          {
+            struct bptr_node *l1_first_leaf = bptr_node_fetch(bptr,
+               _node_brch_vals_get(bptr, l1_n, 0));
+            TEST_ASSERT_NOT_NULL_MESSAGE(l1_first_leaf,
+               "failed to fetch L1's first leaf for L2 separator check");
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(
+               temp->tools->node.cast_i64(l2_n->keys + bptr->key_size * (l1_i - 1)),
+               temp->tools->node.cast_i64(l1_first_leaf->keys),
+               "L2 separator key does not match first key of L1 subtree");
+            bptr_node_unload(bptr, l1_first_leaf);
+          }
 
          for (uint32_t leaf_i = 0; leaf_i <= l1_n->key_count; leaf_i++)
           {
@@ -622,8 +666,12 @@ void test_casc_brch_split_beg(struct bptr_temp *temp, const char *fnm)
                leaf_idx, leaf->node_idx,
                "leaf node_idx does not match L1 vals entry");
 
-            // TODO: L1 separator key consistency — depends on bptr_node_split
-            // "promote" which is not yet implemented. Re-enable when fixed.
+            // Verify L1 separator key matches first key of leaf child
+            if (leaf_i > 0)
+               TEST_ASSERT_EQUAL_INT64_MESSAGE(
+                  temp->tools->node.cast_i64(l1_n->keys + bptr->key_size * (leaf_i - 1)),
+                  temp->tools->node.cast_i64(leaf->keys),
+                  "L1 separator key does not match first key of leaf child");
 
             // Verify key/value integrity (via parent→child traversal).
             // After inserting key=0 at pos 0, the global key sequence shifts by 1.
@@ -900,14 +948,23 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
          "L2 key_count sum != brch_full");
 
       // ---- 3. Verify new root's separator key ----
-      // TODO: bptr_node_split "promote" is incomplete — the new root's
-      // separator key is not yet set during cascading splits. Re-enable when fixed.
-      // {
-      //    struct bptr_node *r_l1_first = ...
-      //    TEST_ASSERT_EQUAL_INT64_MESSAGE(
-      //       temp->tools->node.cast_i64(new_root->keys),
-      //       temp->tools->node.cast_i64(r_first_leaf->keys), ...);
-      // }
+      // The new root's separator key must equal the first key of the first
+      // leaf in the right L2 subtree (standard B+tree invariant).
+      {
+         struct bptr_node *r_l1 = bptr_node_fetch(bptr,
+            _node_brch_vals_get(bptr, l2_right, 0));
+         TEST_ASSERT_NOT_NULL_MESSAGE(r_l1, "failed to fetch right L2's first L1");
+         struct bptr_node *r_first_leaf = bptr_node_fetch(bptr,
+            _node_brch_vals_get(bptr, r_l1, 0));
+         TEST_ASSERT_NOT_NULL_MESSAGE(r_first_leaf,
+            "failed to fetch right L2's first leaf");
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(
+            temp->tools->node.cast_i64(new_root->keys),
+            temp->tools->node.cast_i64(r_first_leaf->keys),
+            "new root separator key does not match first key of right subtree");
+         bptr_node_unload(bptr, r_first_leaf);
+         bptr_node_unload(bptr, r_l1);
+      }
 
       // ---- 4. Traverse every node: verify metadata, parent links, and leaf keys/vals ----
       uint64_t first_l1_idx = 0;
@@ -942,8 +999,19 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
                l1_idx, l1_n->node_idx,
                "L1 node_idx does not match parent's vals entry");
 
-            // TODO: L2 separator key consistency — depends on bptr_node_split
-            // "promote" which is not yet implemented. Re-enable when fixed.
+            // Verify L2 separator key matches first key of L1's first leaf
+            if (l1_i > 0)
+             {
+               struct bptr_node *l1_first_leaf = bptr_node_fetch(bptr,
+                  _node_brch_vals_get(bptr, l1_n, 0));
+               TEST_ASSERT_NOT_NULL_MESSAGE(l1_first_leaf,
+                  "failed to fetch L1's first leaf for L2 separator check");
+               TEST_ASSERT_EQUAL_INT64_MESSAGE(
+                  temp->tools->node.cast_i64(l2_n->keys + bptr->key_size * (l1_i - 1)),
+                  temp->tools->node.cast_i64(l1_first_leaf->keys),
+                  "L2 separator key does not match first key of L1 subtree");
+               bptr_node_unload(bptr, l1_first_leaf);
+             }
 
             for (uint32_t leaf_i = 0; leaf_i <= l1_n->key_count; leaf_i++)
              {
@@ -962,8 +1030,12 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
                   leaf_idx, leaf->node_idx,
                   "leaf node_idx does not match L1 vals entry");
 
-               // TODO: L1 separator key consistency — depends on bptr_node_split
-               // "promote" which is not yet implemented. Re-enable when fixed.
+               // Verify L1 separator key matches first key of leaf child
+               if (leaf_i > 0)
+                  TEST_ASSERT_EQUAL_INT64_MESSAGE(
+                     temp->tools->node.cast_i64(l1_n->keys + bptr->key_size * (leaf_i - 1)),
+                     temp->tools->node.cast_i64(leaf->keys),
+                     "L1 separator key does not match first key of leaf child");
 
                // Verify keys are monotonically increasing and vals match keys.
                // After inserting pos*2+1 at position pos, exact global position
