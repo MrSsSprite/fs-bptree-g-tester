@@ -78,6 +78,21 @@ void _bptr_load_check(struct bptr_temp *template)
    TEST_ASSERT_EQUAL(bptr->node_size, template->node_sz);
    TEST_ASSERT_EQUAL(bptr->key_size, template->key_sz);
    TEST_ASSERT_EQUAL(bptr->value_size, template->val_sz);
+   // Tree state after fresh create->unload->load round-trip
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr->height,
+      "height should be 0 after init (no root node)");
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr->root_idx,
+      "root_idx should be 0 after init (no nodes)");
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr->record_cnt,
+      "record_cnt should be 0 after init");
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr->node_cnt,
+      "node_cnt should be 0 after init (no nodes)");
+   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->node_bound.leaf.up,
+      "leaf bound should be set");
+   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, bptr->node_bound.brch.up,
+      "branch bound should be set");
+   TEST_ASSERT_NOT_NULL_MESSAGE(bptr->cache,
+      "cache should be allocated");
 
    TEST_ASSERT_MESSAGE(bptr_unload(bptr) == 0, "bptr_unload failure");
 }
