@@ -978,12 +978,7 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
                   int64_t actual_val = temp->tools->node.cast_i64(
                      leaf->vals + bptr->value_size * k_i);
 
-                  // Monotonicity check
-                  if (global_i > 0) {
-                     int64_t cur_key = actual_key;
-                     // Get previous key (stored at prev_key)
-                     (void)cur_key;  // checked below via prev comparison
-                  }
+                  // Monotonicity is checked per-leaf below (k_i > 0 comparison)
 
                   // Validate value from key:
                   //   Even key (j*2+2): val = key * 3 / 2
@@ -1004,7 +999,7 @@ void test_casc_brch_split_iter(struct bptr_temp *temp)
                      int64_t prev = temp->tools->node.cast_i64(
                         leaf->keys + bptr->key_size * (k_i - 1));
                      TEST_ASSERT_GREATER_THAN_INT64_MESSAGE(prev, actual_key,
-                        "leaf keys not strictly decreasing within leaf");
+                        "leaf keys not strictly increasing within leaf");
                   }
                 }
 
