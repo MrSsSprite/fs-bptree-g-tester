@@ -888,8 +888,34 @@ void test_sing_brch_split_iter(struct bptr_temp *temp)
 
             int64_t j = 0;
             int64_t total_keys = (int64_t)leaf_count * k + 1;
+            struct bptr_node *prev_walk = NULL;
             while (walk)
              {
+               // Verify leaf node metadata and structure
+               TEST_ASSERT_TRUE_MESSAGE(walk->is_leaf,
+                  "leaf walk: node is not a leaf");
+               TEST_ASSERT_EQUAL_MESSAGE(0, walk->level,
+                  "leaf walk: leaf level != 0");
+               TEST_ASSERT_NOT_EQUAL_MESSAGE(0, walk->parent,
+                  "leaf walk: parent pointer is 0");
+               TEST_ASSERT_NOT_EQUAL_MESSAGE(0, walk->node_idx,
+                  "leaf walk: node_idx is 0");
+               TEST_ASSERT_BITS_HIGH_MESSAGE(
+                  BPTR_NODE_FLAG_VALID | BPTR_NODE_FLAG_LEAF,
+                  walk->flags, "leaf walk: flags incorrect");
+               if (prev_walk)
+                {
+                  TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+                     prev_walk->node_idx, walk->prev,
+                     "leaf walk: prev linkage broken");
+                  TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+                     walk->node_idx, prev_walk->next,
+                     "leaf walk: next linkage broken");
+                }
+               else
+                  TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, walk->prev,
+                     "leaf walk: first leaf prev != 0");
+
                for (uint32_t li = 0; li < walk->key_count; li++, j++)
                 {
                   int64_t exp_key, exp_val;
@@ -922,10 +948,16 @@ void test_sing_brch_split_iter(struct bptr_temp *temp)
                // node and next_n are unloaded after this block; skip them here.
                if (walk != node && walk != next_n)
                   bptr_node_unload(bptr, walk);
+               prev_walk = walk;
                walk = next_walk;
              }
             TEST_ASSERT_EQUAL_INT64_MESSAGE(total_keys, j,
                "total key count mismatch after walking all leaves");
+            // Verify last leaf terminates the chain
+            TEST_ASSERT_NOT_NULL_MESSAGE(prev_walk,
+               "leaf walk: no leaves traversed");
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, prev_walk->next,
+               "leaf walk: last leaf next != 0");
          }
 
          bptr_node_unload(bptr, next_n);
