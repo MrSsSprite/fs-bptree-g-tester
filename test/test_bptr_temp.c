@@ -33,7 +33,7 @@ void _val_ins_i64__##Suffix(struct bptr_node *node, int64_t val, size_t idx) \
 void _key_ers__##S(struct bptr_node *node, size_t idx) \
 { \
    if (idx < node->key_count) \
-      memmove((T*)node->keys, (T*)node->keys + 1, \
+      memmove((T*)node->keys + idx, (T*)node->keys + idx + 1, \
               (node->key_count - idx - 1) * sizeof(T)); \
 }
 #define _val_ers__generate(T, S) \
@@ -41,7 +41,7 @@ void _val_ers__##S(struct bptr_node *node, size_t idx) \
 { \
    size_t val_cnt = _node_val_cnt(node); \
    if (idx < val_cnt) \
-      memmove((T*)node->vals, (T*)node->vals + 1, \
+      memmove((T*)node->vals + idx, (T*)node->vals + idx + 1, \
               (val_cnt - idx - 1) * sizeof(T)); \
 }
 
