@@ -864,9 +864,28 @@ void test_sing_brch_split_iter(struct bptr_temp *temp)
                                              "root_n->key_count != 1");
             bptr_node_t c0 = _node_brch_vals_get(bptr, root_n, 0);
             bptr_node_t c1 = _node_brch_vals_get(bptr, root_n, 1);
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(0, c0,
+               "root_n->vals[0] is 0");
+            TEST_ASSERT_NOT_EQUAL_MESSAGE(0, c1,
+               "root_n->vals[1] is 0");
             TEST_ASSERT_TRUE_MESSAGE(
                c0 == par_n->node_idx || c1 == par_n->node_idx,
                "par_n not found as child of new root");
+            // Verify both children have correct parent pointer back to root
+            {
+               struct bptr_node *c0_n = bptr_node_fetch(bptr, c0);
+               TEST_ASSERT_NOT_NULL_MESSAGE(c0_n,
+                  "failed to fetch root_n->vals[0]");
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(root_n->node_idx, c0_n->parent,
+                  "root_n->vals[0] parent != root_n");
+               bptr_node_unload(bptr, c0_n);
+               struct bptr_node *c1_n = bptr_node_fetch(bptr, c1);
+               TEST_ASSERT_NOT_NULL_MESSAGE(c1_n,
+                  "failed to fetch root_n->vals[1]");
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(root_n->node_idx, c1_n->parent,
+                  "root_n->vals[1] parent != root_n");
+               bptr_node_unload(bptr, c1_n);
+            }
             bptr_node_unload(bptr, root_n);
          }
 
