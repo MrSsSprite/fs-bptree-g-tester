@@ -54,7 +54,13 @@ struct bptr *_bptr_create(struct bptr_temp *template)
                                  template->node_sz, template->key_sz,
                                  template->val_sz, template->cache_cap,
                                  template->cmp);
-   TEST_ASSERT_MESSAGE(bptr, "`_bptr_create': `bptr_init' returned NULL");
+   if (!bptr)
+    {
+      // bptr_init may have partially created the file before failing;
+      // clean it up so the next run starts from a clean state.
+      remove(path);
+      TEST_FAIL_MESSAGE("`_bptr_create': `bptr_init' returned NULL");
+    }
    return bptr;
 }
 
