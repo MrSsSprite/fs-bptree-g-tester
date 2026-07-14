@@ -32,6 +32,7 @@ void _bptr_path_subdir
          TEST_FAIL_MESSAGE("Failed to create sub-directory");
       *it = *subdir;
     }
+   *it = '\0';
    if (*subdir != '/')
     {
       if (mkdir(subpath, 0755) != 0 && errno != EEXIST)
