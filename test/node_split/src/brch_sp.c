@@ -155,7 +155,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
       "sum of key_count of node and next_n incorrect");
    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
       node->key_count, next_n->key_count,
-      "right child has more key than left child");
+      "left child has more keys than right child");
    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
       1, node->key_count - next_n->key_count,
       "(node->key_count - next_n->key_count)");
@@ -197,7 +197,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    par_n = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, root_n, 1));
    TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch (root_n->child)[1]");
    TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(1, par_n->key_count,
-                                               "par[1] has too few vals");
+                                               "par[1] has too few keys");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx,
       _node_brch_vals_get(bptr, par_n, par_n->key_count - 1),
       "node != second to last item of par[1]");
@@ -420,7 +420,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, next_n->next, "next of last node");
    TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(
       next_n->key_count, node->key_count,
-      "node has less key than new_n after split");
+      "new_n has fewer keys than node after split");
    TEST_ASSERT_TRUE_MESSAGE(next_n->is_leaf, "last node is_leaf not true");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(
       _node_brch_vals_get(bptr, par_n, par_n->key_count), next_n->node_idx,
@@ -502,7 +502,7 @@ void test_sing_brch_split_beg(struct bptr_temp *temp, const char *fnm)
       "sum of key_count of node and next_n incorrect");
    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
       node->key_count, next_n->key_count,
-      "right child has more key than left child");
+      "left child has more keys than right child");
    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(
       1, node->key_count - next_n->key_count,
       "(node->key_count - next_n->key_count)");
