@@ -322,6 +322,7 @@ void test_sing_brch_split_end(struct bptr_temp *temp, const char *fnm)
    TEST_ASSERT_EQUAL_MESSAGE(1, par_n->level, "right brch level != 1");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(root_n->node_idx, par_n->parent,
                                     "right brch parent != root_n");
+   bptr_node_unload(bptr, root_n);
    TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, par_n->flags,
                                  "right brch flags missing VALID");
    TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, par_n->flags,
