@@ -466,10 +466,15 @@ void _bptr_full_brch_casc_verify(struct bptr_temp *temp)
           }
          else
           {
-            // Only the very first leaf of the first L1 has prev == 0
+            // First leaf of this L1: prev == 0 only for the very first L1
             if (root_i == 0)
                TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev,
                                                  "first leaf prev != 0");
+            else
+               // Cross-L1 boundary: first leaf of non-first L1 should
+               // link to the last leaf of the previous L1
+               TEST_ASSERT_NOT_EQUAL_MESSAGE(0, node->prev,
+                  "first leaf of non-first L1 has prev == 0");
             if (brch_full > 0)
                TEST_ASSERT_EQUAL_UINT64_MESSAGE(
                   _node_brch_vals_get(bptr, l1_n, 1), node->next,
@@ -477,9 +482,17 @@ void _bptr_full_brch_casc_verify(struct bptr_temp *temp)
           }
 
          // Only the very last leaf of the last L1 has next == 0
-         if (brch_i == brch_full && root_i == brch_full)
-            TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->next,
-               "last leaf next != 0");
+         if (brch_i == brch_full)
+          {
+            if (root_i == brch_full)
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->next,
+                  "last leaf next != 0");
+            else
+               // Cross-L1 boundary: last leaf of non-last L1 should
+               // link to the first leaf of the next L1
+               TEST_ASSERT_NOT_EQUAL_MESSAGE(0, node->next,
+                  "last leaf of non-last L1 has next == 0");
+          }
 
          // Verify promoted key matches first key of leaf
          if (brch_i > 0)
