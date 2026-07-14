@@ -20,6 +20,7 @@ int main(void)
    RUN_TEST(test_cache_node_lifecycle);
    RUN_TEST(test_cache_data_persistence);
    RUN_TEST(test_cache_capacity_boundaries);
+   RUN_TEST(test_cache_evict_queue_middle);
 
    return UNITY_END();
 }

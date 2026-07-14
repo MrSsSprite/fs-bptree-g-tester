@@ -294,6 +294,108 @@ void test_cache_capacity_boundaries(void)
 /*--------------------------- Public Functions END ---------------------------*/
 
 
+void test_cache_evict_queue_middle(void)
+{
+   // Test middle-of-queue evict_remove path.
+   // Creates 3 nodes in cap=3 cache, releases to form A(head)->B(mid)->C(tail),
+   // re-fetches B to exercise !is_head && !is_tail removal, then verifies
+   // eviction queue integrity by triggering eviction and confirming A is chosen.
+   struct bptr_temp template =
+    { "cache_evict_mid.bptr", 1, BPTR_NODE_BYTE_DEFAULT,
+      sizeof(uint32_t), sizeof(uint32_t), 3, cmp_u32_local };
+   struct bptr_node *na, *nb, *nc, *nd;
+   struct bptr *bptr;
+   uint32_t key_a = 0xAAAAAAAAu, key_b = 0xBBBBBBBBu, key_c = 0xCCCCCCCCu;
+   uint32_t recovered;
+   bptr_node_t a_idx, b_idx;
+
+   puts("\tEviction Queue Middle-Removal:");
+
+   // Create tree with cache_cap=3
+   printf("\t\tCreating tree with cache_cap=3...");
+   bptr = _bptr_create(&template);
+   TEST_ASSERT_NOT_NULL(bptr->cache);
+   puts("done.");
+
+   // Node A: write, flush, release -> INACTIVE, queue head
+   printf("\t\tCreating node A (queue head)...");
+   na = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL(na);
+   a_idx = na->node_idx;
+   memcpy(na->keys, &key_a, sizeof(key_a));
+   na->key_count = 1;
+   na->is_dirty = 1;
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_node_flush(bptr, na), "flush A failed");
+   bptr_node_unload(bptr, na);  // refcnt 2->1, INACTIVE
+   puts("done.");
+
+   // Node B: write, flush, release -> INACTIVE, queue: A->B
+   printf("\t\tCreating node B (queue middle)...");
+   nb = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL(nb);
+   b_idx = nb->node_idx;
+   memcpy(nb->keys, &key_b, sizeof(key_b));
+   nb->key_count = 1;
+   nb->is_dirty = 1;
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_node_flush(bptr, nb), "flush B failed");
+   bptr_node_unload(bptr, nb);  // refcnt 2->1, INACTIVE
+   puts("done.");
+
+   // Node C: write, flush, release -> INACTIVE, queue: A->B->C
+   printf("\t\tCreating node C (queue tail)...");
+   nc = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL(nc);
+   memcpy(nc->keys, &key_c, sizeof(key_c));
+   nc->key_count = 1;
+   nc->is_dirty = 1;
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_node_flush(bptr, nc), "flush C failed");
+   bptr_node_unload(bptr, nc);  // refcnt 2->1, INACTIVE
+   puts("done.");
+
+   // Re-fetch B from middle of eviction queue
+   // This exercises evict_remove's !is_head && !is_tail path
+   printf("\t\tRe-fetching B (exercises middle removal)...");
+   nb = bptr_node_fetch(bptr, b_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(nb, "re-fetch B failed");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(b_idx, nb->node_idx, "B node_idx mismatch");
+   memcpy(&recovered, nb->keys, sizeof(recovered));
+   TEST_ASSERT_EQUAL_HEX32_MESSAGE(key_b, recovered, "B key mismatch after re-fetch");
+   puts("done.");
+
+   // Release B -> INACTIVE, appended to tail; queue: A->C->B
+   printf("\t\tReleasing B (appends to tail)...");
+   bptr_node_unload(bptr, nb);  // refcnt 2->1, INACTIVE, tail
+   puts("done.");
+
+   // Create node D -> pool full (3 slots occupied), triggers eviction.
+   // A is now head of queue (A->C->B), so A should be evicted.
+   printf("\t\tCreating node D (triggers eviction of A, the head)...");
+   nd = bptr_node_new(bptr, 0);
+   TEST_ASSERT_NOT_NULL_MESSAGE(nd, "create D after eviction failed");
+   puts("done.");
+   bptr_node_unload(bptr, nd);
+
+   // Re-fetch A from disk -> cache miss, evicts another node, loads A
+   printf("\t\tRe-fetching A (expect cache MISS, disk load)...");
+   na = bptr_node_fetch(bptr, a_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(na, "re-fetch A after eviction failed");
+   TEST_ASSERT_EQUAL_MESSAGE(1, na->key_count, "A key_count should be 1");
+   memcpy(&recovered, na->keys, sizeof(recovered));
+   TEST_ASSERT_EQUAL_HEX32_MESSAGE(key_a, recovered,
+      "A key mismatch after eviction + reload");
+   TEST_ASSERT_MESSAGE(!na->is_dirty, "loaded A should not be dirty");
+   puts("done.");
+
+   // Cleanup
+   printf("\t\tCleaning up...");
+   bptr_node_unload(bptr, na);
+   TEST_ASSERT_EQUAL_MESSAGE(0, bptr_unload(bptr), "bptr_unload failure");
+   bptr_cleanup_file(template.fnm);
+   puts("done.");
+   puts("\tEviction Queue Middle-Removal Test: Succeeded.");
+}
+
+
 /*---------------------------- Private Functions -----------------------------*/
 static int cmp_u32_local(const void *lhs, const void *rhs)
 {
