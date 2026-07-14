@@ -119,7 +119,7 @@ void test_simp_split_end(struct bptr_temp *temp)
     }
    bptr_node_unload(bptr, node);
 
-   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "child[0] key not match");
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "promoted key does not match boundary");
 
    node = bptr_node_fetch(bptr, child[1]);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
@@ -162,7 +162,7 @@ void test_simp_split_end(struct bptr_temp *temp)
 }
 
 
-// New element at the beginning (i.e., greater than all existing elements)
+// New element at the beginning (i.e., less than all existing elements)
 void test_simp_split_beg(struct bptr_temp *temp)
 {
    struct bptr *bptr = _bptr_create(temp);
@@ -235,7 +235,7 @@ void test_simp_split_beg(struct bptr_temp *temp)
     }
    bptr_node_unload(bptr, node);
 
-   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "child[0] key not match");
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "promoted key does not match boundary");
 
    node = bptr_node_fetch(bptr, child[1]);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
@@ -284,7 +284,6 @@ void test_simp_split_mid(struct bptr_temp *temp)
    bptr->root_idx = node->node_idx;
 
    // Fill node
-   temp->tools->node.val_ins_i64(node, 0, 0);
    for (int64_t i = 0, mx = bptr->node_bound.leaf.up - 1, j = 0;
         i < mx; i++, j++)
     {
@@ -349,7 +348,7 @@ void test_simp_split_mid(struct bptr_temp *temp)
     }
    bptr_node_unload(bptr, node);
 
-   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "child[0] key not match");
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(idx, par_ki, "promoted key does not match boundary");
 
    node = bptr_node_fetch(bptr, child[1]);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to load child[1]");
