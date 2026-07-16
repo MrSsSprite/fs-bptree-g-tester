@@ -11,6 +11,8 @@ void _bptr_full_brch_create(struct bptr_temp *temp);
 void _bptr_full_brch_verify(struct bptr_temp *temp);
 void _bptr_full_brch_casc_create(struct bptr_temp *temp);
 void _bptr_full_brch_casc_verify(struct bptr_temp *temp);
+void _bptr_part_full_brch_casc_create(struct bptr_temp *temp);
+void _bptr_part_full_brch_casc_verify(struct bptr_temp *temp);
 int temp_instantiate
  (const struct bptr_temp *temp, const char *prefix,
   char *dst_path, size_t dst_path_sz);

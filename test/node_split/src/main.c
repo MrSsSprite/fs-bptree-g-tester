@@ -4,6 +4,7 @@
 #include "simple.h"
 #include "brch_sp.h"
 #include "brch_sp_casc.h"
+#include "brch_sp_part_casc.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
 
@@ -22,6 +23,7 @@ int main(void)
    RUN_TEST(test_simp_split);
    RUN_TEST(test_brch_split);
    RUN_TEST(test_casc_brch_split);
+   RUN_TEST(test_part_casc_brch_split);
 
    return UNITY_END();
 }
