@@ -5,7 +5,7 @@ TARGET      := $(BIN_DIR)/$(TARGET_NAME)
 
 TU_SRC_DIR := src
 
-SRCS += main.c
+SRCS += main.c temp_full.c
 SRCS_PATH = $(addprefix $(TU_SRC_DIR)/, $(SRCS))
 OBJS := $(SRCS_PATH:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o) $(PREREQ_OBJS)
 
