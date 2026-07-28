@@ -5,6 +5,7 @@
 #include "bptr_node.h"
 #include <string.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include <errno.h>
@@ -18,6 +19,7 @@ static long long ensure_par_dirs(char *path, mode_t mode);
 static int cmp_i64(const void *lhs, const void *rhs);
 static int _node_fill(struct bptr *self, struct bptr_node *node,
                       int64_t *st, int64_t interval);
+static int _copy_file(const char *dst, const char *src);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -52,6 +54,26 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
     { perror("_node_fill"); return 1; }
 
    if (bptr_unload(bptr)) { perror("bptr_unload"); return 1; }
+   return 0;
+}
+
+
+int temp_instantiate(const char *path, const char *temp)
+{
+   char fullpath[PATH_MAX] = "bptr_files/";
+
+   strcat(fullpath, path);
+   if (ensure_par_dirs(fullpath, 0755) == -1)
+    { perror("mkdir_parents"); return -1; }
+
+   switch (_copy_file(fullpath, temp))
+    {
+   case 0  : break;
+   case -1 : perror("_copy_file"); return -1;
+   case 1  : return 1;
+   default : perror("Unreachable"); return -2;
+    }
+
    return 0;
 }
 /*--------------------------- Public Functions END ---------------------------*/
@@ -160,5 +182,37 @@ static int _node_fill(struct bptr *self, struct bptr_node *node,
    return 0;
 #undef  _find_lmk
 #undef  _set_kv
+}
+
+
+static int _copy_file(const char *dst, const char *src)
+{
+   int sfd, dfd;
+   struct stat st;
+   char buf[4096];
+   ssize_t n;
+
+   if (access(dst, F_OK) == 0) return 1;
+
+   sfd = open(src, O_RDONLY);
+   if (sfd == -1) { perror("open src"); return -1; }
+   if (fstat(sfd, &st) == -1)
+    { perror("fstat sfd"); close(sfd); return -1; }
+
+   dfd = open(dst, O_WRONLY | O_CREAT, st.st_mode & 0777);
+   if (dfd == -1) { perror("open dfd"); close(sfd); return -1; }
+
+   while ((n = read(sfd, buf, sizeof(buf))) > 0)
+    {
+      char *p = buf;
+      ssize_t written;
+      while (n > 0 && (written = write(dfd, p, n) > 0))
+       { p += written; n -= written; }
+      if (written < 0 || n != 0)
+       { perror("write dfd"); close(dfd); close(sfd); return -1; }
+    }
+   close(dfd);
+   close(sfd);
+   return 0;
 }
 /*-------------------------- Private Functions END ---------------------------*/
