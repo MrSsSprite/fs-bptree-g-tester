@@ -11,12 +11,12 @@
 #include <errno.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include "unity.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
 
 /*--------------------------- Forward Declarations ---------------------------*/
 static long long ensure_par_dirs(char *path, mode_t mode);
-static int cmp_i64(const void *lhs, const void *rhs);
 static int _node_fill(struct bptr *self, struct bptr_node *node,
                       int64_t *st, int64_t interval);
 static int _copy_file(const char *dst, const char *src);
@@ -43,7 +43,7 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
 
    if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode)) return 0;
    bptr = bptr_init(path, is_lite, node_size,
-                    sizeof(int64_t), sizeof(int64_t), 256, cmp_i64);
+                    sizeof(int64_t), sizeof(int64_t), 256, &cmp_i64);
    if (bptr == NULL) { perror("bptr_init"); return 1; }
    node = bptr_node_new(bptr, 0);
    node->level = lay_cnt - 1;
@@ -76,6 +76,145 @@ int temp_instantiate(const char *path, const char *temp)
 
    return 0;
 }
+
+
+void temp_full_verify(struct bptr *bptr,
+                      unsigned int lay_cnt, int64_t st, int64_t interval,
+                      _Bool has_new_kv, int64_t key, int64_t val)
+{
+   struct bptr_node *node, *par_n, *next_n;
+   _Bool has_met_new_kv = 0;
+   uint_fast64_t leaf_cnt = 0;
+
+   TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "bptr == NULL");
+   if (lay_cnt == 0) return;
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE((has_new_kv ? lay_cnt + 1 : lay_cnt),
+                                    bptr->height, "height incorrect");
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, bptr->root_idx, "root_idx == 0");
+
+   /*--------------------------- check leaf layer ----------------------------*/
+   node = bptr_node_fetch(bptr, bptr->root_idx);
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch root");
+   // find leftmost leaf
+   while (node->level != 0)
+    {
+      par_n = node;
+      node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch node");
+      bptr_node_unload(bptr, par_n);
+    }
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev, "prev of leftmost leaf");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leaf is_leaf false");
+   if (bptr->height > 1)
+    {
+      TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, node->parent, "leaf parent == 0");
+      par_n = bptr_node_fetch(bptr, node->parent);
+      TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch parent of leaf");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx,
+                                       _node_brch_vals_get(bptr, par_n, 0),
+                                       "par_n->vals[0] != node");
+    }
+   for (uint32_t i = 0; i < node->key_count; i++)
+    {
+      if (has_new_kv && ((int64_t*)node->keys)[i] == key)
+       {
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(val, ((int64_t*)node->vals)[i],
+                                         "leaf val not match");
+       }
+      else
+       {
+         if (has_new_kv)
+          {
+            if (has_met_new_kv)
+               TEST_ASSERT_GREATER_THAN_INT64_MESSAGE(key,
+                                                      ((int64_t*)node->keys)[i],
+                                                      "incorrect key insert "
+                                                      "location");
+            else
+               TEST_ASSERT_LESS_THAN_INT64_MESSAGE(key,
+                                                   ((int64_t*)node->keys)[i],
+                                                   "incorrect key insert "
+                                                   "location");
+          }
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(st, ((int64_t*)node->keys)[i],
+                                         "leaf key not match");
+         TEST_ASSERT_EQUAL_INT64_MESSAGE(st * 2, ((int64_t*)node->vals)[i],
+                                         "leaf val not match");
+         st += interval;
+       }
+    }
+   leaf_cnt++;
+   for (uint32_t i = 1; node->next; i++)
+    {
+      next_n = bptr_node_fetch(bptr, node->next);
+      if (i == _node_val_cnt(par_n))
+       {
+         struct bptr_node *next_par_n;
+         TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, par_n->next, "par next == 0");
+         next_par_n = bptr_node_fetch(bptr, par_n->next);
+         TEST_ASSERT_NOT_NULL_MESSAGE(next_par_n, "failed to load next parent");
+         bptr_node_unload(bptr, par_n);
+         par_n = next_par_n;
+         i = 0;
+       }
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->next, next_n->node_idx,
+                                       "next_n idx != node->next");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(next_n->node_idx,
+                                       _node_brch_vals_get(bptr, par_n, i),
+                                       "par_n->vals[i] != next_n idx");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
+                                       "next_n prev != node");
+      bptr_node_unload(bptr, node);
+      node = next_n;
+
+      TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leaf is_leaf false");
+      for (uint32_t i = 0; i < node->key_count; i++)
+       {
+         if (has_new_kv && ((int64_t*)node->keys)[i] == key)
+          {
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(val, ((int64_t*)node->vals)[i],
+                                            "leaf val not match");
+          }
+         else
+          {
+            if (has_new_kv)
+             {
+               if (has_met_new_kv)
+                  TEST_ASSERT_GREATER_THAN_INT64_MESSAGE(key,
+                                                         ((int64_t*)node->keys)[i],
+                                                         "incorrect key insert "
+                                                         "location");
+               else
+                  TEST_ASSERT_LESS_THAN_INT64_MESSAGE(key,
+                                                      ((int64_t*)node->keys)[i],
+                                                      "incorrect key insert "
+                                                      "location");
+             }
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(st, ((int64_t*)node->keys)[i],
+                                            "leaf key not match");
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(st * 2, ((int64_t*)node->vals)[i],
+                                            "leaf val not match");
+            st += interval;
+          }
+       }
+      leaf_cnt++;
+    }
+   if (has_new_kv)
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         ((leaf_cnt - 1) * (bptr->node_bound.leaf.up - 1) + 1) * interval,
+         st,
+         "record count (derived from st) not correct");
+   else
+      TEST_ASSERT_EQUAL_INT64_MESSAGE(
+         leaf_cnt * (bptr->node_bound.leaf.up - 1) * interval,
+         st,
+         "record count (derived from st) not correct");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(st / interval, bptr->record_cnt,
+                                    "record count does not match st");
+
+   // TODO: verify correctness of internal nodes
+   // TODO: verify the remaining stats of `bptr`
+}
 /*--------------------------- Public Functions END ---------------------------*/
 
 
@@ -103,7 +242,7 @@ static long long ensure_par_dirs(char *path, mode_t mode)
 }
 
 
-static int cmp_i64(const void *lhs, const void *rhs)
+int cmp_i64(const void *lhs, const void *rhs)
 {
    int64_t diff = *(const int64_t *)lhs - *(const int64_t *)rhs;
    return diff < 0 ? -1 : diff > 0 ? 1 : 0;
