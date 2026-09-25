@@ -35,9 +35,13 @@ static int cmp_i64(const void *lhs, const void *rhs);
 static int _copy_file(const char *dst, const char *src);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
                             int64_t *st, int64_t interval);
-static int _node_fill(struct bptr *self, struct bptr_node *node,
-                      int64_t *st, int64_t interval, int64_t *lmk);
+static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
+                             struct bptr_node *node);
+static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
+                      struct bptr_node *node, int64_t *st, int64_t interval,
+                      int64_t *lmk);
 static struct bptr_node *create_child(struct bptr *self,
+                                      bptr_node_t *prev_at_level,
                                       struct bptr_node *par_n,
                                       int64_t *st, int64_t interval,
                                       int64_t *lmk);
@@ -52,6 +56,7 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    char path[PATH_MAX] = "bptr_files/temp/full/";
    struct bptr *bptr;
    struct bptr_node *node;
+   bptr_node_t *prev_at_level;
    long long len;
    int64_t st_it = st, lmk;
 
@@ -77,6 +82,18 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
       return 1;
     }
 
+   /* `prev_at_level[i]' holds the index of the node most recently created at
+    * level i; nodes are laid down from left to right, so it is the left
+    * sibling of the next node created at that level. */
+   prev_at_level = calloc(lay_cnt, sizeof (bptr_node_t));
+   if (prev_at_level == NULL)
+    {
+      perror("calloc");
+      bptr_unload(bptr);
+      remove(path);
+      return 1;
+    }
+
    /* The node layout (is_leaf, flags and the keys/vals split) is derived from
     * the node level at creation.  `bptr_node_new' increments `height' when the
     * root is created; pre-set it to the target height - 1 so that the root is
@@ -84,26 +101,24 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
     * node, rather than the leaf layout of a fresh tree. */
    bptr->height = lay_cnt - 1;
    node = bptr_node_new(bptr, 0);
-   if (node == NULL)
-    {
-      perror("bptr_node_new");
-      bptr_unload(bptr);
-      remove(path);
-      return 1;
-    }
-   node->prev = node->next = 0;
+   if (node == NULL) { perror("bptr_node_new"); goto GEN_ERR; }
    bptr->node_cnt = 1;
    bptr->root_idx = node->node_idx;
-   if (_node_fill(bptr, node, &st_it, interval, &lmk))
-    {
-      perror("_node_fill");
-      bptr_unload(bptr);
-      remove(path);
-      return 1;
-    }
+   if (_level_chain_push(bptr, prev_at_level, node)) goto GEN_ERR;
+   if (_node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk))
+    { perror("_node_fill"); goto GEN_ERR; }
+   bptr_node_unload(bptr, node);
 
+   free(prev_at_level);
    if (bptr_unload(bptr)) { perror("bptr_unload"); remove(path); return 1; }
    return 0;
+
+   /*-------------------------- Error Handling Zone --------------------------*/
+GEN_ERR:
+   free(prev_at_level);
+   bptr_unload(bptr);   /* best effort: flush what has been written ... */
+   remove(path);        /* ... then drop the partial fixture */
+   return 1;
 }
 
 
@@ -173,22 +188,65 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
 
 
 /**
- * @brief   Fill @p node and its whole subtree with a perfect tree
+ * @brief   Append @p node to the doubly linked list of its level
  *
- * @param[in,out] self      bptr obj.
- * @param[in,out] node      node to fill; its level decides whether it is a
- *                          leaf (base case) or an internal node
- * @param[in,out] st        key cursor; advances as keys are laid down
- * @param[in]     interval  distance between two successive keys
- * @param[out]    lmk       leftmost key of the filled subtree, i.e., the 0th
- *                          key of its leftmost descendant leaf
+ * Every level of the tree forms a single list crossing parent boundaries: the
+ * rightmost child of a node is linked to the leftmost child of the next node
+ * of the parent layer.  Nodes are laid down from left to right, so the node
+ * created last at a level is the left sibling of the next node created there.
+ *
+ * @param[in,out] self           bptr obj.
+ * @param[in,out] prev_at_level  one entry per level; holds the index of the
+ *                               node most recently created at that level, or
+ *                               0 if none
+ * @param[in,out] node           node to append; @c prev and @c next are set
  *
  * @return  0 on success; non-0 on failure.
  */
-static int _node_fill(struct bptr *self, struct bptr_node *node,
-                      int64_t *st, int64_t interval, int64_t *lmk)
+static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
+                             struct bptr_node *node)
 {
-   struct bptr_node *child, *iter_n;
+   struct bptr_node *prev_n;
+
+   node->next = 0;
+   node->prev = prev_at_level[node->level];
+   if (prev_at_level[node->level] == 0)
+    {
+      prev_at_level[node->level] = node->node_idx;
+      return 0;
+    }
+
+   prev_n = bptr_node_fetch(self, prev_at_level[node->level]);
+   if (prev_n == NULL)
+    { perror("_level_chain_push: bptr_node_fetch"); return 1; }
+   prev_n->next = node->node_idx;
+   prev_n->is_dirty = 1;
+   bptr_node_unload(self, prev_n);
+
+   prev_at_level[node->level] = node->node_idx;
+   return 0;
+}
+
+
+/**
+ * @brief   Fill @p node and its whole subtree with a perfect tree
+ *
+ * @param[in,out] self           bptr obj.
+ * @param[in,out] prev_at_level  level list bookkeeping, see @c _level_chain_push
+ * @param[in,out] node           node to fill; its level decides whether it is
+ *                               a leaf (base case) or an internal node
+ * @param[in,out] st             key cursor; advances as keys are laid down
+ * @param[in]     interval       distance between two successive keys
+ * @param[out]    lmk            leftmost key of the filled subtree, i.e., the
+ *                               0th key of its leftmost descendant leaf
+ *
+ * @return  0 on success; non-0 on failure.
+ */
+static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
+                      struct bptr_node *node, int64_t *st, int64_t interval,
+                      int64_t *lmk)
+{
+   struct bptr_node *child;
    int64_t iter_lmk;
 
    // base case
@@ -200,26 +258,21 @@ static int _node_fill(struct bptr *self, struct bptr_node *node,
     }
 
    /* leftmost child; its leftmost key is also the one of `node' */
-   child = create_child(self, node, st, interval, lmk);
+   child = create_child(self, prev_at_level, node, st, interval, lmk);
    if (child == NULL) return 1;
    _node_brch_vals_set(self, node, 0, child->node_idx);
-   child->prev = 0;
+   bptr_node_unload(self, child);
 
    for (; node->key_count < self->node_bound.brch.up - 1; node->key_count++)
     {
-      iter_n = create_child(self, node, st, interval, &iter_lmk);
-      if (iter_n == NULL) return 1;
+      child = create_child(self, prev_at_level, node, st, interval, &iter_lmk);
+      if (child == NULL) return 1;
       /* the ith key of an internal node is the 0th key of the leftmost
        * descendant leaf of its (i + 1)th child */
       ((int64_t*)node->keys)[node->key_count] = iter_lmk;
-      _node_brch_vals_set(self, node, node->key_count + 1, iter_n->node_idx);
-      child->next = iter_n->node_idx;
-      iter_n->prev = child->node_idx;
+      _node_brch_vals_set(self, node, node->key_count + 1, child->node_idx);
       bptr_node_unload(self, child);
-      child = iter_n;
     }
-   child->next = 0;
-   bptr_node_unload(self, child);
 
    return 0;
 }
@@ -228,16 +281,18 @@ static int _node_fill(struct bptr *self, struct bptr_node *node,
 /**
  * @brief   Create a child of @p par_n and fill its whole subtree
  *
- * @param[in,out] self      bptr obj.; @c node_cnt is incremented
- * @param[in]     par_n     parent node; the new node's level, whence its
- *                          layout, is derived from it
- * @param[in,out] st        key cursor; advances as keys are laid down
- * @param[in]     interval  distance between two successive keys
- * @param[out]    lmk       leftmost key of the created subtree
+ * @param[in,out] self           bptr obj.; @c node_cnt is incremented
+ * @param[in,out] prev_at_level  level list bookkeeping, see @c _level_chain_push
+ * @param[in]     par_n          parent node; the new node's level, whence its
+ *                               layout, is derived from it
+ * @param[in,out] st             key cursor; advances as keys are laid down
+ * @param[in]     interval       distance between two successive keys
+ * @param[out]    lmk            leftmost key of the created subtree
  *
  * @return  the created, still loaded node; NULL on failure.
  */
 static struct bptr_node *create_child(struct bptr *self,
+                                      bptr_node_t *prev_at_level,
                                       struct bptr_node *par_n,
                                       int64_t *st, int64_t interval,
                                       int64_t *lmk)
@@ -247,7 +302,9 @@ static struct bptr_node *create_child(struct bptr *self,
    if (node == NULL) { perror("create_child: bptr_node_new"); return NULL; }
    self->node_cnt++;
 
-   if (_node_fill(self, node, st, interval, lmk))
+   if (_level_chain_push(self, prev_at_level, node))
+    { perror("create_child: _level_chain_push"); return NULL; }
+   if (_node_fill(self, prev_at_level, node, st, interval, lmk))
     { perror("create_child: _node_fill"); return NULL; }
 
    return node;
