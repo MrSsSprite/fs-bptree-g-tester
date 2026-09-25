@@ -97,6 +97,7 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    struct bptr *bptr;
    struct bptr_node *node;
    bptr_node_t *prev_at_level;
+   uint32_t ptr_size;
    long long len;
    int64_t st_it = st, lmk;
 
@@ -104,10 +105,12 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
     * (see `FULL_GEN_CACHE_CAP') */
    if (lay_cnt == 0 || lay_cnt > FULL_GEN_CACHE_CAP - 2u)
     { perror("lay_cnt out of range"); return 1; }
-   /* the size sanity `bptr_init' applies, so that a request which could never
-    * build a tree is refused before any file is consulted or created */
-   if (node_size < BPTR_NODE_METADATA_BYTE + (uint32_t)sizeof (int64_t) +
-                   (is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE) * 2)
+   /* the smallest node `bptr_init' accepts: metadata and one key plus the two
+    * child pointers of its minimum fanout, so that a request which could
+    * never build a tree is refused before any file is consulted or created */
+   ptr_size = is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE;
+   if (node_size < BPTR_NODE_METADATA_BYTE + ptr_size +
+                   2 * ((uint32_t)sizeof (int64_t) + ptr_size))
     { perror("node_size out of range"); return 1; }
 
    /* drop a fixture left armed by an aborted call before writing anything */
@@ -299,7 +302,7 @@ static int _fixture_matches(const char *path, unsigned int lay_cnt,
    struct stat fst;
    uint32_t version, stored_node_size, height;
    uint16_t key_size, value_size;
-   uint_fast64_t node_cnt;
+   uint_fast64_t node_cnt, blocks;
    FILE *file;
    size_t rd;
 
@@ -340,9 +343,11 @@ static int _fixture_matches(const char *path, unsigned int lay_cnt,
     }
    if (node_cnt == 0) return 0;
 
-   /* unsigned: `node_cnt' is read from the file and may be anything */
-   return (uint_fast64_t)fst.st_size ==
-             (node_cnt + 1) * (uint_fast64_t)node_size;
+   /* unsigned and overflow free: `node_cnt' is read from the file, and the
+    * block count cannot exceed the size of the file */
+   blocks = (uint_fast64_t)fst.st_size / (uint_fast64_t)node_size;
+   if ((uint_fast64_t)fst.st_size % (uint_fast64_t)node_size) return 0;
+   return blocks == node_cnt + 1;
 }
 
 
