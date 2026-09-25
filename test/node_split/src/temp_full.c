@@ -217,8 +217,7 @@ static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
     }
 
    prev_n = bptr_node_fetch(self, prev_at_level[node->level]);
-   if (prev_n == NULL)
-    { perror("_level_chain_push: bptr_node_fetch"); return 1; }
+   TEST_ASSERT_NOT_NULL_MESSAGE(prev_n, "_level_chain_push: bptr_node_fetch");
    prev_n->next = node->node_idx;
    prev_n->is_dirty = 1;
    bptr_node_unload(self, prev_n);
@@ -299,7 +298,7 @@ static struct bptr_node *create_child(struct bptr *self,
 {
    struct bptr_node *node = bptr_node_new(self, par_n->node_idx);
 
-   if (node == NULL) { perror("create_child: bptr_node_new"); return NULL; }
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "create_child: bptr_node_new");
    self->node_cnt++;
 
    if (_level_chain_push(self, prev_at_level, node))
