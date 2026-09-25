@@ -15,12 +15,32 @@
 /*--------------------------- Private Includes END ---------------------------*/
 
 
+/*------------------------------ Private Macros ------------------------------*/
+/* width-aware counterpart of `_node_brch_vals_get' in `bptr_node.h' */
+#define _node_brch_vals_set(self, node, idx, val) do \
+{ \
+   if ((self)->is_lite) \
+      *((BPTR_LITE_PTR_TYPE*)(node)->vals + (idx)) = \
+         (BPTR_LITE_PTR_TYPE)(val); \
+   else \
+      *((BPTR_NORM_PTR_TYPE*)(node)->vals + (idx)) = \
+         (BPTR_NORM_PTR_TYPE)(val); \
+} while (0)
+/*---------------------------- Private Macros END ----------------------------*/
+
+
 /*--------------------------- Forward Declarations ---------------------------*/
 static long long ensure_par_dirs(char *path, mode_t mode);
 static int cmp_i64(const void *lhs, const void *rhs);
-static int _node_fill(struct bptr *self, struct bptr_node *node,
-                      int64_t *st, int64_t interval);
 static int _copy_file(const char *dst, const char *src);
+static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
+                            int64_t *st, int64_t interval);
+static int _node_fill(struct bptr *self, struct bptr_node *node,
+                      int64_t *st, int64_t interval, int64_t *lmk);
+static struct bptr_node *create_child(struct bptr *self,
+                                      struct bptr_node *par_n,
+                                      int64_t *st, int64_t interval,
+                                      int64_t *lmk);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -33,7 +53,7 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    struct bptr *bptr;
    struct bptr_node *node;
    long long len;
-   int64_t st_it = st;
+   int64_t st_it = st, lmk;
 
    /* a node level is stored in a uint16_t */
    if (lay_cnt == 0 || lay_cnt > UINT16_MAX)
@@ -74,7 +94,7 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    node->prev = node->next = 0;
    bptr->node_cnt = 1;
    bptr->root_idx = node->node_idx;
-   if (_node_fill(bptr, node, &st_it, interval))
+   if (_node_fill(bptr, node, &st_it, interval, &lmk))
     {
       perror("_node_fill");
       bptr_unload(bptr);
@@ -152,65 +172,85 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
 }
 
 
+/**
+ * @brief   Fill @p node and its whole subtree with a perfect tree
+ *
+ * @param[in,out] self      bptr obj.
+ * @param[in,out] node      node to fill; its level decides whether it is a
+ *                          leaf (base case) or an internal node
+ * @param[in,out] st        key cursor; advances as keys are laid down
+ * @param[in]     interval  distance between two successive keys
+ * @param[out]    lmk       leftmost key of the filled subtree, i.e., the 0th
+ *                          key of its leftmost descendant leaf
+ *
+ * @return  0 on success; non-0 on failure.
+ */
 static int _node_fill(struct bptr *self, struct bptr_node *node,
-                      int64_t *st, int64_t interval)
-#define _find_lmk(T) do { \
-   struct bptr_node *c_it[2]; int c_i = 0; \
-   c_it[c_i] = bptr_node_fetch(self, *(T*)child->vals); \
-   if (c_it[c_i] == NULL) { perror("_node_fill: bptr_node_new"); return 1; } \
-   for (; !c_it[c_i]->is_leaf; c_i ^= 1) \
-   { \
-      c_it[c_i ^ 1] = bptr_node_fetch(self, *(T*)c_it[c_i]->vals); \
-      if (c_it[c_i ^ 1] == NULL) \
-       { perror("_node_fill: bptr_node_new"); return 1; } \
-      bptr_node_unload(self, c_it[c_i]); \
-   } \
-   lmk = *(int64_t*)c_it[c_i]->keys; \
-} while (0)
-#define _set_kv(T) do { \
-   ((int64_t*)node->keys)[node->key_count] = lmk; \
-   ((T*)node->vals)[node->key_count + 1] = child->node_idx; \
-} while (0)
+                      int64_t *st, int64_t interval, int64_t *lmk)
 {
-   struct bptr_node *child, *prev_child;
+   struct bptr_node *child, *iter_n;
+   int64_t iter_lmk;
 
    // base case
-   if (node->is_leaf) { _node_fill_leaf(self, node, st, interval); return 0; }
-
-   // internal node
-   child = bptr_node_new(self, node->node_idx);
-   if (child == NULL) { perror("_node_fill: bptr_node_new"); return 1; }
-   if (_node_fill(self, child, st, interval)) return 1;
-   if (self->is_lite) ((BPTR_LITE_PTR_TYPE*)node->vals)[0] = child->node_idx;
-   else               ((BPTR_NORM_PTR_TYPE*)node->vals)[0] = child->node_idx;
-   self->node_cnt++;
-   child->prev = 0;
-   prev_child = child;
-
-   for (uint32_t key_mx = self->node_bound.brch.up - 1;
-        node->key_count < key_mx; node->key_count++)
+   if (node->is_leaf)
     {
-      child = bptr_node_new(self, node->node_idx);
-      if (child == NULL) { perror("_node_fill: bptr_node_new"); return 1; }
-      prev_child->next = child->node_idx;
-      child->prev = prev_child->node_idx;
-      bptr_node_unload(self, prev_child);
-      if (_node_fill(self, child, st, interval)) return 1;
-      int64_t lmk;
-      if (self->is_lite)
-         { _find_lmk(BPTR_LITE_PTR_TYPE); _set_kv(BPTR_LITE_PTR_TYPE); }
-      else
-         { _find_lmk(BPTR_NORM_PTR_TYPE); _set_kv(BPTR_NORM_PTR_TYPE); }
-      self->node_cnt++;
-      prev_child = child;
+      _node_fill_leaf(self, node, st, interval);
+      *lmk = ((int64_t*)node->keys)[0];
+      return 0;
     }
 
+   /* leftmost child; its leftmost key is also the one of `node' */
+   child = create_child(self, node, st, interval, lmk);
+   if (child == NULL) return 1;
+   _node_brch_vals_set(self, node, 0, child->node_idx);
+   child->prev = 0;
+
+   for (; node->key_count < self->node_bound.brch.up - 1; node->key_count++)
+    {
+      iter_n = create_child(self, node, st, interval, &iter_lmk);
+      if (iter_n == NULL) return 1;
+      /* the ith key of an internal node is the 0th key of the leftmost
+       * descendant leaf of its (i + 1)th child */
+      ((int64_t*)node->keys)[node->key_count] = iter_lmk;
+      _node_brch_vals_set(self, node, node->key_count + 1, iter_n->node_idx);
+      child->next = iter_n->node_idx;
+      iter_n->prev = child->node_idx;
+      bptr_node_unload(self, child);
+      child = iter_n;
+    }
    child->next = 0;
    bptr_node_unload(self, child);
 
    return 0;
-#undef  _find_lmk
-#undef  _set_kv
+}
+
+
+/**
+ * @brief   Create a child of @p par_n and fill its whole subtree
+ *
+ * @param[in,out] self      bptr obj.; @c node_cnt is incremented
+ * @param[in]     par_n     parent node; the new node's level, whence its
+ *                          layout, is derived from it
+ * @param[in,out] st        key cursor; advances as keys are laid down
+ * @param[in]     interval  distance between two successive keys
+ * @param[out]    lmk       leftmost key of the created subtree
+ *
+ * @return  the created, still loaded node; NULL on failure.
+ */
+static struct bptr_node *create_child(struct bptr *self,
+                                      struct bptr_node *par_n,
+                                      int64_t *st, int64_t interval,
+                                      int64_t *lmk)
+{
+   struct bptr_node *node = bptr_node_new(self, par_n->node_idx);
+
+   if (node == NULL) { perror("create_child: bptr_node_new"); return NULL; }
+   self->node_cnt++;
+
+   if (_node_fill(self, node, st, interval, lmk))
+    { perror("create_child: _node_fill"); return NULL; }
+
+   return node;
 }
 
 
