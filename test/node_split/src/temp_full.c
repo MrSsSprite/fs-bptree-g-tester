@@ -17,7 +17,8 @@
 
 /*------------------------------ Private Macros ------------------------------*/
 /* node cache capacity of the generated tree: one node stays pinned per level
- * while its subtree is filled, so a taller tree cannot be generated */
+ * while its subtree is filled, plus one spare slot for the level list sibling
+ * fetched while a node is appended, so a taller tree cannot be generated */
 #define FULL_GEN_CACHE_CAP 256u
 
 /* width-aware counterpart of `_node_brch_vals_get' in `bptr_node.h' */
@@ -43,6 +44,9 @@ static char _gen_path[PATH_MAX];
 static long long ensure_par_dirs(char *path, mode_t mode);
 static int cmp_i64(const void *lhs, const void *rhs);
 static int _copy_file(const char *dst, const char *src);
+static int _fixture_matches(const char *path, const struct stat *fst,
+                            unsigned int lay_cnt, _Bool is_lite,
+                            uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
                             int64_t *st, int64_t interval);
 static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
@@ -77,7 +81,10 @@ static struct bptr_node *create_child(struct bptr *self,
  *
  * @return  0 on success; non-0 on failure, with the partial fixture removed
  *
- * @note    Returns 0 without touching the file when it already exists.
+ * @note    Returns 0 without touching a file that already exists and matches
+ *          the requested layout; a file that does not match, be it a partial
+ *          image left by an aborted run or one built with other parameters,
+ *          is reported as a failure so that it cannot be served silently.
  * @note    A failure reported through a Unity assertion does not return, so
  *          the caller has to drop the fixture through @c temp_full_discard ;
  *          every other failure is cleaned up here.
@@ -94,8 +101,8 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    int64_t st_it = st, lmk;
 
    /* a node level is stored in a uint16_t; the node cache also caps the height
-    * as one node stays pinned per level while its subtree is filled */
-   if (lay_cnt == 0 || lay_cnt + 2 > FULL_GEN_CACHE_CAP)
+    * (see `FULL_GEN_CACHE_CAP') */
+   if (lay_cnt == 0 || lay_cnt > FULL_GEN_CACHE_CAP - 2u)
     { perror("lay_cnt out of range"); return 1; }
 
    len = ensure_par_dirs(path, 0755);
@@ -103,7 +110,19 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    sprintf(path + len, "%u-%" PRIi64 "-%" PRIi64 ".bptr",
            lay_cnt, st, interval);
 
-   if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode)) return 0;
+   if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode))
+    {
+      /* a fixture written by an earlier run is reused as is, but only when it
+       * really is one: a partial image left by an aborted run, or an image
+       * built with some other layout, must not be served silently */
+      if (!_fixture_matches(path, &fst, lay_cnt, is_lite, node_size))
+       {
+         fprintf(stderr, "temp_full_generate: %s is not a complete fixture of "
+                         "this layout; delete it and retry\n", path);
+         return 1;
+       }
+      return 0;
+    }
    bptr = bptr_init(path, is_lite, node_size,
                     sizeof(int64_t), sizeof(int64_t), FULL_GEN_CACHE_CAP,
                     cmp_i64);
@@ -129,9 +148,11 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
       return 1;
     }
 
-   /* the fixture now exists but is incomplete: remember it, so that a Unity
-    * assertion, which does not return, can still be unwound into
-    * `temp_full_discard' by the caller */
+   /* the fixture now exists but is incomplete: drop any path still armed by an
+    * aborted call, then remember this one, so that a Unity assertion, which
+    * does not return, can still be unwound into `temp_full_discard' by the
+    * caller */
+   if (_gen_path[0] != '\0') remove(_gen_path);
    strcpy(_gen_path, path);
 
    /* The node layout (is_leaf, flags and the keys/vals split) is derived from
@@ -173,7 +194,9 @@ void temp_full_discard(void)
 {
    if (_gen_path[0] == '\0') return;
 
-   remove(_gen_path);
+   /* keep the path armed when the unlink failed for any reason but a missing
+    * file, so that a later call can retry it */
+   if (remove(_gen_path) && errno != ENOENT) return;
    _gen_path[0] = '\0';
 }
 
@@ -240,6 +263,71 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
       ((int64_t*)node->vals)[node->key_count] = *st * 2;
     }
    self->record_cnt += node->key_count;
+}
+
+
+/**
+ * @brief   Check whether an existing file is the fixture that was asked for
+ *
+ * The header is read directly (see `core/docs/header_bin_layout.md'): a
+ * partial image left by an aborted run still carries the header written when
+ * the file was created, whence a height of 0 and no node count.
+ *
+ * @param[in] path       file to inspect
+ * @param[in] fst        its `stat', for the size check
+ * @param[in] lay_cnt    number of levels the caller asked for
+ * @param[in] is_lite    child pointer layout the caller asked for
+ * @param[in] node_size  node size the caller asked for
+ *
+ * @return  1 if @p path is a complete fixture of that layout; 0 otherwise.
+ */
+static int _fixture_matches(const char *path, const struct stat *fst,
+                            unsigned int lay_cnt, _Bool is_lite,
+                            uint32_t node_size)
+{
+   unsigned char hdr[64];
+   uint32_t version, stored_node_size, height;
+   uint16_t key_size, value_size;
+   uint_fast64_t node_cnt;
+   FILE *file;
+   size_t rd;
+
+   file = fopen(path, "rb");
+   if (file == NULL) return 0;
+   rd = fread(hdr, 1, sizeof hdr, file);
+   fclose(file);
+   if (rd < sizeof hdr) return 0;
+
+   memcpy(&version, hdr + 4, sizeof version);
+   memcpy(&stored_node_size, hdr + 8, sizeof stored_node_size);
+   memcpy(&key_size, hdr + 12, sizeof key_size);
+   memcpy(&value_size, hdr + 14, sizeof value_size);
+   memcpy(&height, hdr + 24, sizeof height);
+   if (memcmp(hdr, BPTR_MAGIC_STR, 4) ||
+       (version & 0x7Fu) != BPTR_CURRENT_VERSION ||
+       ((version & 0x80u) ? 1 : 0) != (is_lite ? 1 : 0) ||
+       stored_node_size != node_size ||
+       key_size != sizeof (int64_t) || value_size != sizeof (int64_t) ||
+       height != lay_cnt)
+      return 0;
+
+   /* node_cnt is the 4th pointer-sized field of the header */
+   if (is_lite)
+    {
+      uint32_t cnt;
+      memcpy(&cnt, hdr + 28 + 3 * BPTR_LITE_PTR_BYTE, sizeof cnt);
+      node_cnt = cnt;
+    }
+   else
+    {
+      uint64_t cnt;
+      memcpy(&cnt, hdr + 28 + 3 * BPTR_NORM_PTR_BYTE, sizeof cnt);
+      node_cnt = cnt;
+    }
+   if (node_cnt == 0) return 0;
+
+   return (long long)fst->st_size ==
+             ((long long)node_cnt + 1) * (long long)node_size;
 }
 
 
