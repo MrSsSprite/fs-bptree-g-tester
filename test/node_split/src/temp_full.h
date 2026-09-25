@@ -3,6 +3,7 @@
 
 /*----------------------------- Public Includes ------------------------------*/
 #include <stdint.h>
+#include "bptree.h"
 /*--------------------------- Public Includes END ----------------------------*/
 
 
@@ -23,6 +24,11 @@ int temp_instantiate(const char *path, const char *temp);
  *        nothing.
  */
 void temp_full_discard(void);
+void temp_full_verify(struct bptr *bptr,
+                      unsigned int lay_cnt, int64_t st, int64_t interval,
+                      _Bool has_new_kv, int64_t key, int64_t val);
+
+int cmp_i64(const void *lhs, const void *rhs);
 /*--------------------------- Public Functions END ---------------------------*/
 
 #endif
