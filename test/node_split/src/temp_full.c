@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include "unity.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
 
@@ -34,7 +35,9 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    long long len;
    int64_t st_it = st;
 
-   if (lay_cnt == 0) { perror("lay_cnt == 0"); return 1; }
+   /* a node level is stored in a uint16_t */
+   if (lay_cnt == 0 || lay_cnt > UINT16_MAX)
+    { perror("lay_cnt out of range"); return 1; }
 
    len = ensure_par_dirs(path, 0755);
    if (len == -1) { perror("mkdir_parents"); return 1; }
@@ -44,16 +47,42 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode)) return 0;
    bptr = bptr_init(path, is_lite, node_size,
                     sizeof(int64_t), sizeof(int64_t), 256, cmp_i64);
-   if (bptr == NULL) { perror("bptr_init"); return 1; }
+   if (bptr == NULL) { perror("bptr_init"); remove(path); return 1; }
+   /* a full tree cannot carry a key if a leaf holds none */
+   if (bptr->node_bound.leaf.up < 2)
+    {
+      perror("node_size too small: leaf.up < 2");
+      bptr_unload(bptr);
+      remove(path);
+      return 1;
+    }
+
+   /* The node layout (is_leaf, flags and the keys/vals split) is derived from
+    * the node level at creation.  `bptr_node_new' increments `height' when the
+    * root is created; pre-set it to the target height - 1 so that the root is
+    * born at level `lay_cnt - 1', and thence with the layout of an internal
+    * node, rather than the leaf layout of a fresh tree. */
+   bptr->height = lay_cnt - 1;
    node = bptr_node_new(bptr, 0);
-   node->level = lay_cnt - 1;
-   bptr->height = lay_cnt;
+   if (node == NULL)
+    {
+      perror("bptr_node_new");
+      bptr_unload(bptr);
+      remove(path);
+      return 1;
+    }
+   node->prev = node->next = 0;
    bptr->node_cnt = 1;
    bptr->root_idx = node->node_idx;
    if (_node_fill(bptr, node, &st_it, interval))
-    { perror("_node_fill"); return 1; }
+    {
+      perror("_node_fill");
+      bptr_unload(bptr);
+      remove(path);
+      return 1;
+    }
 
-   if (bptr_unload(bptr)) { perror("bptr_unload"); return 1; }
+   if (bptr_unload(bptr)) { perror("bptr_unload"); remove(path); return 1; }
    return 0;
 }
 
