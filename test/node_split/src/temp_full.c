@@ -44,9 +44,9 @@ static char _gen_path[PATH_MAX];
 static long long ensure_par_dirs(char *path, mode_t mode);
 static int cmp_i64(const void *lhs, const void *rhs);
 static int _copy_file(const char *dst, const char *src);
-static int _fixture_matches(const char *path, const struct stat *fst,
-                            unsigned int lay_cnt, _Bool is_lite,
-                            uint32_t node_size);
+static int _gen_path_drop(void);
+static int _fixture_matches(const char *path, unsigned int lay_cnt,
+                            _Bool is_lite, uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
                             int64_t *st, int64_t interval);
 static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
@@ -104,6 +104,18 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
     * (see `FULL_GEN_CACHE_CAP') */
    if (lay_cnt == 0 || lay_cnt > FULL_GEN_CACHE_CAP - 2u)
     { perror("lay_cnt out of range"); return 1; }
+   /* the size sanity `bptr_init' applies, so that a request which could never
+    * build a tree is refused before any file is consulted or created */
+   if (node_size < BPTR_NODE_METADATA_BYTE + (uint32_t)sizeof (int64_t) +
+                   (is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE) * 2)
+    { perror("node_size out of range"); return 1; }
+
+   /* drop a fixture left armed by an aborted call before writing anything */
+   if (_gen_path_drop())
+    {
+      fprintf(stderr, "temp_full_generate: cannot drop %s\n", _gen_path);
+      return 1;
+    }
 
    len = ensure_par_dirs(path, 0755);
    if (len == -1) { perror("mkdir_parents"); return 1; }
@@ -115,13 +127,17 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
       /* a fixture written by an earlier run is reused as is, but only when it
        * really is one: a partial image left by an aborted run, or an image
        * built with some other layout, must not be served silently */
-      if (!_fixture_matches(path, &fst, lay_cnt, is_lite, node_size))
+      switch (_fixture_matches(path, lay_cnt, is_lite, node_size))
        {
+      case 1  : return 0;
+      case 0  :
          fprintf(stderr, "temp_full_generate: %s is not a complete fixture of "
                          "this layout; delete it and retry\n", path);
          return 1;
+      default :
+         fprintf(stderr, "temp_full_generate: cannot read %s\n", path);
+         return 1;
        }
-      return 0;
     }
    bptr = bptr_init(path, is_lite, node_size,
                     sizeof(int64_t), sizeof(int64_t), FULL_GEN_CACHE_CAP,
@@ -148,11 +164,9 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
       return 1;
     }
 
-   /* the fixture now exists but is incomplete: drop any path still armed by an
-    * aborted call, then remember this one, so that a Unity assertion, which
-    * does not return, can still be unwound into `temp_full_discard' by the
-    * caller */
-   if (_gen_path[0] != '\0') remove(_gen_path);
+   /* the fixture now exists but is incomplete: remember it, so that a Unity
+    * assertion, which does not return, can still be unwound into
+    * `temp_full_discard' by the caller */
    strcpy(_gen_path, path);
 
    /* The node layout (is_leaf, flags and the keys/vals split) is derived from
@@ -192,12 +206,7 @@ GEN_ERR:
 
 void temp_full_discard(void)
 {
-   if (_gen_path[0] == '\0') return;
-
-   /* keep the path armed when the unlink failed for any reason but a missing
-    * file, so that a later call can retry it */
-   if (remove(_gen_path) && errno != ENOENT) return;
-   _gen_path[0] = '\0';
+   (void)_gen_path_drop();
 }
 
 
@@ -271,21 +280,23 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
  *
  * The header is read directly (see `core/docs/header_bin_layout.md'): a
  * partial image left by an aborted run still carries the header written when
- * the file was created, whence a height of 0 and no node count.
+ * the file was created, whence a height of 0 and no node count.  The checks
+ * prove that the file is consistent with the request, not that this generator
+ * wrote it: `st' and `interval' live only in the file name.
  *
  * @param[in] path       file to inspect
- * @param[in] fst        its `stat', for the size check
  * @param[in] lay_cnt    number of levels the caller asked for
  * @param[in] is_lite    child pointer layout the caller asked for
  * @param[in] node_size  node size the caller asked for
  *
- * @return  1 if @p path is a complete fixture of that layout; 0 otherwise.
+ * @return  1 if @p path is a complete fixture of that layout, 0 if it is not,
+ *          and -1 if it cannot be read.
  */
-static int _fixture_matches(const char *path, const struct stat *fst,
-                            unsigned int lay_cnt, _Bool is_lite,
-                            uint32_t node_size)
+static int _fixture_matches(const char *path, unsigned int lay_cnt,
+                            _Bool is_lite, uint32_t node_size)
 {
    unsigned char hdr[64];
+   struct stat fst;
    uint32_t version, stored_node_size, height;
    uint16_t key_size, value_size;
    uint_fast64_t node_cnt;
@@ -293,7 +304,10 @@ static int _fixture_matches(const char *path, const struct stat *fst,
    size_t rd;
 
    file = fopen(path, "rb");
-   if (file == NULL) return 0;
+   if (file == NULL) return -1;
+   /* measure through the open handle: the file must not change between the
+    * size and the content check */
+   if (fstat(fileno(file), &fst) == -1) { fclose(file); return -1; }
    rd = fread(hdr, 1, sizeof hdr, file);
    fclose(file);
    if (rd < sizeof hdr) return 0;
@@ -326,8 +340,9 @@ static int _fixture_matches(const char *path, const struct stat *fst,
     }
    if (node_cnt == 0) return 0;
 
-   return (long long)fst->st_size ==
-             ((long long)node_cnt + 1) * (long long)node_size;
+   /* unsigned: `node_cnt' is read from the file and may be anything */
+   return (uint_fast64_t)fst.st_size ==
+             (node_cnt + 1) * (uint_fast64_t)node_size;
 }
 
 
@@ -449,6 +464,24 @@ static struct bptr_node *create_child(struct bptr *self,
    _node_fill(self, prev_at_level, node, st, interval, lmk);
 
    return node;
+}
+
+
+/**
+ * @brief   Drop the fixture armed by a `temp_full_generate' call
+ *
+ * The path stays armed when the file could not be removed for any reason but
+ * a missing one, so that a later call can retry it.
+ *
+ * @return  0 when no path is armed or the file was removed; non-0 otherwise.
+ */
+static int _gen_path_drop(void)
+{
+   if (_gen_path[0] == '\0') return 0;
+
+   if (remove(_gen_path) && errno != ENOENT) return 1;
+   _gen_path[0] = '\0';
+   return 0;
 }
 
 
