@@ -19,6 +19,8 @@
 static long long ensure_par_dirs(char *path, mode_t mode);
 static int _node_fill(struct bptr *self, struct bptr_node *node,
                       int64_t *st, int64_t interval);
+static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
+                                 uint32_t idx);
 static int _copy_file(const char *dst, const char *src);
 /*------------------------- Forward Declarations END -------------------------*/
 
@@ -212,7 +214,59 @@ void temp_full_verify(struct bptr *bptr,
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(st / interval, bptr->record_cnt,
                                     "record count does not match st");
 
-   // TODO: verify correctness of internal nodes
+   /*----------------------- check internal node layers ----------------------*/
+   // The leaf layer has been traversed to its far right; walk every internal
+   // layer from the extreme node left by the previous one, checking the sibling
+   // chain, flags/level, fill, and every separator key.
+   _Bool ltr = 0;  // leaf node traversed to far right
+   struct bptr_node dummy_n = { .node_idx = 0 }, *prior_n, *following_n;
+   for (uint32_t level = 1; level < bptr->height; level++, ltr ^= 1)
+    {
+      // step up to this layer: level 1 starts from the rightmost leaf, higher
+      // layers from the extreme node left by the previous (reverse) pass
+      if (node->parent != 0)
+       {
+         struct bptr_node *tmp_n = bptr_node_fetch(bptr, node->parent);
+         TEST_ASSERT_NOT_NULL_MESSAGE(tmp_n, "failed to fetch parent node");
+         bptr_node_unload(bptr, node);
+         node = tmp_n;
+       }
+
+      prior_n = &dummy_n;
+      while (node != &dummy_n)
+       {
+         bptr_node_t following_i = ltr ? node->next : node->prev;
+         following_n = following_i ? bptr_node_fetch(bptr, following_i)
+                                   : &dummy_n;
+         TEST_ASSERT_NOT_NULL_MESSAGE(following_n, "failed to fetch node");
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(ltr ? node->prev : node->next,
+                                          prior_n->node_idx,
+                                          "internal node chain broken");
+         TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "internal node is_leaf true");
+         TEST_ASSERT_TRUE_MESSAGE((node->flags & BPTR_NODE_FLAG_VALID) != 0,
+                                  "internal node flags not valid");
+         TEST_ASSERT_FALSE_MESSAGE((node->flags & BPTR_NODE_FLAG_LEAF) != 0,
+                                   "internal node flags marked as leaf");
+         TEST_ASSERT_EQUAL_UINT16_MESSAGE(level, node->level,
+                                          "internal node level incorrect");
+         if (!has_new_kv)
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->node_bound.brch.up - 1,
+                                             node->key_count,
+                                             "internal node not full");
+         // TODO: checksum not implemented yet. SKIP that
+         for (uint32_t i = 0; i < node->key_count; i++)
+            TEST_ASSERT_EQUAL_INT64_MESSAGE(
+               _find_correct_key(bptr, node, i), ((int64_t*)node->keys)[i],
+               "internal node key not match");
+
+         if (prior_n != &dummy_n) bptr_node_unload(bptr, prior_n);
+         prior_n = node;
+         node = following_n;
+       }
+
+      node = prior_n;  // extreme node of this layer, still loaded
+    }
+   if (bptr->height > 1) bptr_node_unload(bptr, node);
    // TODO: verify the remaining stats of `bptr`
 }
 /*--------------------------- Public Functions END ---------------------------*/
@@ -353,5 +407,31 @@ static int _copy_file(const char *dst, const char *src)
    close(dfd);
    close(sfd);
    return 0;
+}
+
+
+static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
+                                 uint32_t idx)
+{
+   struct bptr_node *child_n, *iter_n;
+   int64_t key;
+
+   // The ith key of an internal node is the 0th key of the leftmost descendant
+   // leaf of the (i+1)th child of the internal node.
+   child_n = bptr_node_fetch(self, _node_brch_vals_get(self, node, idx + 1));
+   TEST_ASSERT_NOT_NULL_MESSAGE(child_n, "failed to fetch child node");
+
+   while (!child_n->is_leaf)
+    {
+      iter_n = bptr_node_fetch(self, _node_brch_vals_get(self, child_n, 0));
+      TEST_ASSERT_NOT_NULL_MESSAGE(iter_n, "failed to fetch descendant node");
+      bptr_node_unload(self, child_n);
+      child_n = iter_n;
+    }
+
+   key = ((int64_t*)child_n->keys)[0];
+   bptr_node_unload(self, child_n);
+
+   return key;
 }
 /*-------------------------- Private Functions END ---------------------------*/
