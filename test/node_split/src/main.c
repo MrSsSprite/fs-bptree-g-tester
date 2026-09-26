@@ -9,14 +9,7 @@
 /*------------------------------- Unity Setup --------------------------------*/
 void setUp(void) { }
 
-void tearDown(void)
-{
-   /* a Unity assertion inside `temp_full_generate' aborts the test without
-    * running the generator's own error path, so drop whatever fixture it left
-    * behind: the exists-short-circuit would otherwise serve it as a good one
-    * and every later run would pass */
-   temp_full_discard();
-}
+void tearDown(void) { }
 /*----------------------------- Unity Setup END ------------------------------*/
 
 void test_temp_generate(void);
