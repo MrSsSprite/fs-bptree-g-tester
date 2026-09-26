@@ -16,6 +16,10 @@
 
 
 /*------------------------------ Private Macros ------------------------------*/
+/* node cache capacity of the generated tree: one node stays pinned per level
+ * while its subtree is filled, so a taller tree cannot be generated */
+#define FULL_GEN_CACHE_CAP 256u
+
 /* width-aware counterpart of `_node_brch_vals_get' in `bptr_node.h' */
 #define _node_brch_vals_set(self, node, idx, val) do \
 { \
@@ -29,17 +33,23 @@
 /*---------------------------- Private Macros END ----------------------------*/
 
 
+/*---------------------------- Private Variables -----------------------------*/
+/* fixture being written by `temp_full_generate'; "" when none is in flight */
+static char _gen_path[PATH_MAX];
+/*-------------------------- Private Variables END ---------------------------*/
+
+
 /*--------------------------- Forward Declarations ---------------------------*/
 static long long ensure_par_dirs(char *path, mode_t mode);
 static int cmp_i64(const void *lhs, const void *rhs);
 static int _copy_file(const char *dst, const char *src);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
                             int64_t *st, int64_t interval);
-static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
-                             struct bptr_node *node);
-static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
-                      struct bptr_node *node, int64_t *st, int64_t interval,
-                      int64_t *lmk);
+static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
+                              struct bptr_node *node);
+static void _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
+                       struct bptr_node *node, int64_t *st, int64_t interval,
+                       int64_t *lmk);
 static struct bptr_node *create_child(struct bptr *self,
                                       bptr_node_t *prev_at_level,
                                       struct bptr_node *par_n,
@@ -49,6 +59,29 @@ static struct bptr_node *create_child(struct bptr *self,
 
 
 /*----------------------------- Public Functions -----------------------------*/
+/**
+ * @brief   Build a perfectly full tree of @p lay_cnt levels and write it to
+ *          `bptr_files/temp/full/<lay_cnt>-<st>-<interval>.bptr'
+ *
+ * Keys start at @p st and step by @p interval; each value is the key times
+ * two.  Every leaf holds `leaf.up - 1' keys, every internal node holds
+ * `brch.up - 1' keys and `brch.up' children, and key i of an internal node is
+ * the 0th key of the leftmost descendant leaf of its (i + 1)th child.  Every
+ * level forms one doubly linked list crossing parent boundaries.
+ *
+ * @param[in] lay_cnt    number of levels; 1 yields a single leaf
+ * @param[in] st         first key
+ * @param[in] interval   distance between two successive keys
+ * @param[in] is_lite    use the 4-byte child pointer layout
+ * @param[in] node_size  size of a node in bytes
+ *
+ * @return  0 on success; non-0 on failure, with the partial fixture removed
+ *
+ * @note    Returns 0 without touching the file when it already exists.
+ * @note    A failure reported through a Unity assertion does not return, so
+ *          the caller has to drop the fixture through @c temp_full_discard ;
+ *          every other failure is cleaned up here.
+ */
 int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
                        _Bool is_lite, uint32_t node_size)
 {
@@ -60,8 +93,9 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    long long len;
    int64_t st_it = st, lmk;
 
-   /* a node level is stored in a uint16_t */
-   if (lay_cnt == 0 || lay_cnt > UINT16_MAX)
+   /* a node level is stored in a uint16_t; the node cache also caps the height
+    * as one node stays pinned per level while its subtree is filled */
+   if (lay_cnt == 0 || lay_cnt + 2 > FULL_GEN_CACHE_CAP)
     { perror("lay_cnt out of range"); return 1; }
 
    len = ensure_par_dirs(path, 0755);
@@ -71,7 +105,8 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
 
    if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode)) return 0;
    bptr = bptr_init(path, is_lite, node_size,
-                    sizeof(int64_t), sizeof(int64_t), 256, cmp_i64);
+                    sizeof(int64_t), sizeof(int64_t), FULL_GEN_CACHE_CAP,
+                    cmp_i64);
    if (bptr == NULL) { perror("bptr_init"); remove(path); return 1; }
    /* a full tree cannot carry a key if a leaf holds none */
    if (bptr->node_bound.leaf.up < 2)
@@ -94,6 +129,11 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
       return 1;
     }
 
+   /* the fixture now exists but is incomplete: remember it, so that a Unity
+    * assertion, which does not return, can still be unwound into
+    * `temp_full_discard' by the caller */
+   strcpy(_gen_path, path);
+
    /* The node layout (is_leaf, flags and the keys/vals split) is derived from
     * the node level at creation.  `bptr_node_new' increments `height' when the
     * root is created; pre-set it to the target height - 1 so that the root is
@@ -104,13 +144,19 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    if (node == NULL) { perror("bptr_node_new"); goto GEN_ERR; }
    bptr->node_cnt = 1;
    bptr->root_idx = node->node_idx;
-   if (_level_chain_push(bptr, prev_at_level, node)) goto GEN_ERR;
-   if (_node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk))
-    { perror("_node_fill"); goto GEN_ERR; }
+   _level_chain_push(bptr, prev_at_level, node);
+   _node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk);
    bptr_node_unload(bptr, node);
 
    free(prev_at_level);
-   if (bptr_unload(bptr)) { perror("bptr_unload"); remove(path); return 1; }
+   if (bptr_unload(bptr))
+    {
+      perror("bptr_unload");
+      remove(path);
+      _gen_path[0] = '\0';
+      return 1;
+    }
+   _gen_path[0] = '\0';
    return 0;
 
    /*-------------------------- Error Handling Zone --------------------------*/
@@ -118,7 +164,17 @@ GEN_ERR:
    free(prev_at_level);
    bptr_unload(bptr);   /* best effort: flush what has been written ... */
    remove(path);        /* ... then drop the partial fixture */
+   _gen_path[0] = '\0';
    return 1;
+}
+
+
+void temp_full_discard(void)
+{
+   if (_gen_path[0] == '\0') return;
+
+   remove(_gen_path);
+   _gen_path[0] = '\0';
 }
 
 
@@ -201,10 +257,11 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
  *                               0 if none
  * @param[in,out] node           node to append; @c prev and @c next are set
  *
- * @return  0 on success; non-0 on failure.
+ * @note  A failed fetch is reported through a Unity assertion, which does not
+ *        return.
  */
-static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
-                             struct bptr_node *node)
+static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
+                              struct bptr_node *node)
 {
    struct bptr_node *prev_n;
 
@@ -213,7 +270,7 @@ static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
    if (prev_at_level[node->level] == 0)
     {
       prev_at_level[node->level] = node->node_idx;
-      return 0;
+      return;
     }
 
    prev_n = bptr_node_fetch(self, prev_at_level[node->level]);
@@ -223,7 +280,6 @@ static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
    bptr_node_unload(self, prev_n);
 
    prev_at_level[node->level] = node->node_idx;
-   return 0;
 }
 
 
@@ -239,11 +295,12 @@ static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
  * @param[out]    lmk            leftmost key of the filled subtree, i.e., the
  *                               0th key of its leftmost descendant leaf
  *
- * @return  0 on success; non-0 on failure.
+ * @note  Failures are reported through Unity assertions inside
+ *        @c create_child ; this function does not return on failure.
  */
-static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
-                      struct bptr_node *node, int64_t *st, int64_t interval,
-                      int64_t *lmk)
+static void _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
+                       struct bptr_node *node, int64_t *st, int64_t interval,
+                       int64_t *lmk)
 {
    struct bptr_node *child;
    int64_t iter_lmk;
@@ -253,27 +310,23 @@ static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
     {
       _node_fill_leaf(self, node, st, interval);
       *lmk = ((int64_t*)node->keys)[0];
-      return 0;
+      return;
     }
 
    /* leftmost child; its leftmost key is also the one of `node' */
    child = create_child(self, prev_at_level, node, st, interval, lmk);
-   if (child == NULL) return 1;
    _node_brch_vals_set(self, node, 0, child->node_idx);
    bptr_node_unload(self, child);
 
    for (; node->key_count < self->node_bound.brch.up - 1; node->key_count++)
     {
       child = create_child(self, prev_at_level, node, st, interval, &iter_lmk);
-      if (child == NULL) return 1;
       /* the ith key of an internal node is the 0th key of the leftmost
        * descendant leaf of its (i + 1)th child */
       ((int64_t*)node->keys)[node->key_count] = iter_lmk;
       _node_brch_vals_set(self, node, node->key_count + 1, child->node_idx);
       bptr_node_unload(self, child);
     }
-
-   return 0;
 }
 
 
@@ -288,7 +341,10 @@ static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
  * @param[in]     interval       distance between two successive keys
  * @param[out]    lmk            leftmost key of the created subtree
  *
- * @return  the created, still loaded node; NULL on failure.
+ * @return  the created, still loaded node
+ *
+ * @note  A failed node creation is reported through a Unity assertion, which
+ *        does not return.
  */
 static struct bptr_node *create_child(struct bptr *self,
                                       bptr_node_t *prev_at_level,
@@ -301,10 +357,8 @@ static struct bptr_node *create_child(struct bptr *self,
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "create_child: bptr_node_new");
    self->node_cnt++;
 
-   if (_level_chain_push(self, prev_at_level, node))
-    { perror("create_child: _level_chain_push"); return NULL; }
-   if (_node_fill(self, prev_at_level, node, st, interval, lmk))
-    { perror("create_child: _node_fill"); return NULL; }
+   _level_chain_push(self, prev_at_level, node);
+   _node_fill(self, prev_at_level, node, st, interval, lmk);
 
    return node;
 }
