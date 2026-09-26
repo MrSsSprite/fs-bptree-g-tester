@@ -16,6 +16,9 @@
 
 
 /*------------------------------ Private Macros ------------------------------*/
+/* directory the fixtures live in, relative to the working directory */
+#define FULL_GEN_DIR "bptr_files/temp/full/"
+
 /* node cache capacity of the generated tree: one node stays pinned per level
  * while its subtree is filled, plus one spare slot for the level list sibling
  * fetched while a node is appended, so a taller tree cannot be generated */
@@ -57,9 +60,18 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
 
 
 /*----------------------------- Public Functions -----------------------------*/
+int temp_full_path(char *buf, size_t size, unsigned int lay_cnt, int64_t st,
+                   int64_t interval)
+{
+   return snprintf(buf, size, FULL_GEN_DIR "%u-%" PRIi64 "-%" PRIi64 ".bptr",
+                   lay_cnt, st, interval);
+}
+
+
 /**
  * @brief   Build a perfectly full tree of @p lay_cnt levels and write it to
- *          `bptr_files/temp/full/<lay_cnt>-<st>-<interval>.bptr'
+ *          `bptr_files/temp/full/<lay_cnt>-<st>-<interval>.bptr' (the name is
+ *          built by `temp_full_path')
  *
  * Keys start at @p st and step by @p interval; each value is the key times
  * two.  Every leaf holds `leaf.up - 1' keys, every internal node holds
@@ -104,12 +116,11 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
                        _Bool is_lite, uint32_t node_size)
 {
    struct stat fst;
-   char path[PATH_MAX] = "bptr_files/temp/full/";
+   char path[PATH_MAX];
    struct bptr *bptr;
    struct bptr_node *node;
    bptr_node_t *prev_at_level;
    uint32_t ptr_size;
-   long long len;
    int status = TEMP_FULL_OK;
    int64_t st_it = st, lmk;
 
@@ -125,10 +136,9 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
                    2 * ((uint32_t)sizeof (int64_t) + ptr_size))
       return _gen_fail(TEMP_FULL_E_NODE_SIZE, NULL);
 
-   len = ensure_par_dirs(path, 0755);
-   if (len == -1) return _gen_fail(TEMP_FULL_E_DIR, path);
-   sprintf(path + len, "%u-%" PRIi64 "-%" PRIi64 ".bptr",
-           lay_cnt, st, interval);
+   temp_full_path(path, sizeof path, lay_cnt, st, interval);
+   if (ensure_par_dirs(path, 0755) == -1)
+      return _gen_fail(TEMP_FULL_E_DIR, path);
 
    if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode))
     {
