@@ -2,6 +2,7 @@
 #define __TEMP_FULL_H
 
 /*----------------------------- Public Includes ------------------------------*/
+#include <stddef.h>
 #include <stdint.h>
 #include "bptree.h"
 /*--------------------------- Public Includes END ----------------------------*/
@@ -28,6 +29,28 @@
 
 
 /*----------------------------- Public Functions -----------------------------*/
+/**
+ * @brief   Path of the fixture `temp_full_generate' serves a request with
+ *
+ * The name is `bptr_files/temp/full/<lay_cnt>-<st>-<interval>.bptr', relative
+ * to the working directory.  The layout (`is_lite' and `node_size') is not part
+ * of it, so requests that differ only there share one name; the short-circuit
+ * of `temp_full_generate' is what refuses an existing file that does not match.
+ * The generator and its callers both build the name here, so a loader cannot
+ * look for a name the generator no longer writes.
+ *
+ * @param[out] buf        destination, always NUL terminated
+ * @param[in]  size       capacity of @p buf
+ * @param[in]  lay_cnt    number of levels
+ * @param[in]  st         first key
+ * @param[in]  interval   distance between two successive keys
+ *
+ * @return  the number of characters written, `snprintf' semantics: a truncated
+ *          name returns the length it would have needed.  The name is shorter
+ *          than 64 bytes, so a `PATH_MAX' buffer always holds it whole.
+ */
+int temp_full_path(char *buf, size_t size, unsigned int lay_cnt, int64_t st,
+                   int64_t interval);
 /**
  * @brief   Build, or reuse, a perfectly full tree fixture of @p lay_cnt levels
  *

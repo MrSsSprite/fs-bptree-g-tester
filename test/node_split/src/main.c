@@ -1,6 +1,7 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include "unity.h"
 #include "unity_internals.h"
 #include "temp_full.h"
@@ -17,7 +18,35 @@ void test_temp(void);
 
 /*----------------------------- Fixture Utility ------------------------------*/
 /**
- * @brief   Generate the full tree fixtures the cases below load
+ * @brief   One template the split cases are built on
+ *
+ * The shape a template is generated with.  `gen_full_fixtures' writes one
+ * image per entry and `test_temp' verifies one per entry, so the two cannot
+ * drift apart: every template a case may instantiate is a template that has
+ * been checked first.
+ */
+struct full_fixture
+{
+   unsigned int lay_cnt;   /* number of levels; 1 yields a single leaf */
+   int64_t      st;        /* first key */
+   int64_t      interval;  /* distance between two successive keys */
+   _Bool        is_lite;   /* use the 4-byte child pointer layout */
+   uint32_t     node_size; /* size of a node in bytes */
+};
+
+/* the images of the unit: 1, 2 and 3 levels tall, keys starting at 0 and
+ * stepping by 0x10, in the default lite 512-byte layout */
+static const struct full_fixture FULL_FIXTURES[] =
+{
+   { 1, 0, 0x10, 1, 512 },
+   { 2, 0, 0x10, 1, 512 },
+   { 3, 0, 0x10, 1, 512 },
+};
+
+#define FULL_FIXTURE_CNT (sizeof (FULL_FIXTURES) / sizeof (FULL_FIXTURES[0]))
+
+/**
+ * @brief   Generate every template the cases below load
  *
  * A tester utility rather than a case of its own: `main' runs it directly,
  * before `UNITY_BEGIN', and stops the run when it fails.  It reports through
@@ -25,16 +54,16 @@ void test_temp(void);
  * Unity assertion, which would need an abort frame that does not exist outside
  * a case.
  *
- * @return  TEMP_FULL_OK when every fixture exists; the status of the first
+ * @return  TEMP_FULL_OK when every template exists; the status of the first
  *          generation that failed otherwise
  */
 static int gen_full_fixtures(void)
 {
-   /* the images the split cases are built on: 1, 2 and 3 levels tall, keys
-    * starting at 0 and stepping by 0x10, in the default lite 512-byte layout */
-   for (unsigned int lay_cnt = 1; lay_cnt <= 3; lay_cnt++)
+   for (size_t i = 0; i < FULL_FIXTURE_CNT; i++)
     {
-      int status = temp_full_generate(lay_cnt, 0, 0x10, 1, 512);
+      const struct full_fixture *fx = &FULL_FIXTURES[i];
+      int status = temp_full_generate(fx->lay_cnt, fx->st, fx->interval,
+                                      fx->is_lite, fx->node_size);
 
       if (status != TEMP_FULL_OK) return status;
     }
@@ -62,6 +91,8 @@ int main(void)
     }
 
    UNITY_BEGIN();
+   /* the template guard: it proves the images the cases below instantiate, so
+    * it has to stay the first case of the unit */
    RUN_TEST(test_temp);
    //RUN_TEST(...);
 
@@ -69,13 +100,41 @@ int main(void)
 }
 
 
+/**
+ * @brief   Check every generated template before a modification is attempted
+ *
+ * The guard on the generator.  A split case is only meaningful once the image
+ * it instantiates is known to be correct, so each template is loaded and walked
+ * by `temp_full_verify' here, ahead of the cases that will modify one.  A
+ * defect aborts the case -- and with it the run -- before anything is
+ * instantiated.
+ *
+ * @note  Loading and unloading an image rewrites its header block: the library
+ *        always flushes that block from the shared scratch buffer it marshals
+ *        nodes through, so the bytes past the header keep whatever node image
+ *        was left there.  Only the blocks past block 0 are the image's content;
+ *        a fixture must not be pinned by the hash of the whole file.
+ */
 void test_temp(void)
 {
-   struct bptr *bptr = bptr_load("bptr_files/temp/full/1-0-16.bptr", 256,
-                                 &cmp_i64);
+   char path[PATH_MAX], msg[PATH_MAX + 32];
 
-   TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
-   temp_full_verify(bptr, 1, 0, 0x10, 0, 0, 0);
-   TEST_ASSERT_EQUAL(BPTR_E_SUCCESS, bptr_unload(bptr));
+   for (size_t i = 0; i < FULL_FIXTURE_CNT; i++)
+    {
+      const struct full_fixture *fx = &FULL_FIXTURES[i];
+      struct bptr *bptr;
+
+      temp_full_path(path, sizeof path, fx->lay_cnt, fx->st, fx->interval);
+      snprintf(msg, sizeof msg, "failed to load %s", path);
+      /* loader cache only: the verifier reloads nodes as it walks the image */
+      bptr = bptr_load(path, 256, &cmp_i64);
+      TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
+
+      /* name the template under check: `temp_full_verify' asserts with fixed
+       * messages, so this line is what tells which image carried a defect */
+      printf("  template %s\n", path);
+      temp_full_verify(bptr, fx->lay_cnt, fx->st, fx->interval, 0, 0, 0);
+      TEST_ASSERT_EQUAL(BPTR_E_SUCCESS, bptr_unload(bptr));
+    }
 }
 /*--------------------------------- MAIN END ---------------------------------*/
