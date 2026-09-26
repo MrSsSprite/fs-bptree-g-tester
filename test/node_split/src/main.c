@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include <stdio.h>
+#include <stdlib.h>
 #include "unity.h"
 #include "unity_internals.h"
 #include "temp_full.h"
@@ -18,10 +19,11 @@ void test_temp(void);
 /**
  * @brief   Generate the full tree fixtures the cases below load
  *
- * Building a fixture is a precondition shared by the cases, not a case of its
- * own: this is a plain function returning the status of `temp_full_generate'
- * (`temp_full_strerror' names it), so that a case can turn a non-OK status into
- * a failure of its own instead of the generator asserting on its behalf.
+ * A tester utility rather than a case of its own: `main' runs it directly,
+ * before `UNITY_BEGIN', and stops the run when it fails.  It reports through
+ * its return value -- named by `temp_full_strerror' -- instead of through a
+ * Unity assertion, which would need an abort frame that does not exist outside
+ * a case.
  *
  * @return  TEMP_FULL_OK when every fixture exists; the status of the first
  *          generation that failed otherwise
@@ -44,9 +46,22 @@ static int gen_full_fixtures(void)
 /*----------------------------------- MAIN -----------------------------------*/
 int main(void)
 {
-   puts("Test Unit: node_split");
-   UNITY_BEGIN();
+   int status;
 
+   puts("Test Unit: node_split");
+
+   /* the fixtures the cases load are an input of this unit, not a case: build
+    * them here, and stop the run when they cannot be built rather than let a
+    * case discover a missing image */
+   status = gen_full_fixtures();
+   if (status != TEMP_FULL_OK)
+    {
+      fprintf(stderr, "node_split: cannot generate the fixtures: %s\n",
+              temp_full_strerror(status));
+      return EXIT_FAILURE;
+    }
+
+   UNITY_BEGIN();
    RUN_TEST(test_temp);
    //RUN_TEST(...);
 
@@ -56,13 +71,9 @@ int main(void)
 
 void test_temp(void)
 {
-   struct bptr *bptr;
-   int status = gen_full_fixtures();
+   struct bptr *bptr = bptr_load("bptr_files/temp/full/1-0-16.bptr", 256,
+                                 &cmp_i64);
 
-   TEST_ASSERT_EQUAL_INT_MESSAGE(TEMP_FULL_OK, status,
-                                 temp_full_strerror(status));
-
-   bptr = bptr_load("bptr_files/temp/full/1-0-16.bptr", 256, &cmp_i64);
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "failed to load bptr");
    temp_full_verify(bptr, 1, 0, 0x10, 0, 0, 0);
    TEST_ASSERT_EQUAL(BPTR_E_SUCCESS, bptr_unload(bptr));
