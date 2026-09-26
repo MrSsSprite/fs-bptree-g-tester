@@ -46,8 +46,11 @@
  * @param[in]  interval   distance between two successive keys
  *
  * @return  the number of characters written, `snprintf' semantics: a truncated
- *          name returns the length it would have needed.  The name is shorter
- *          than 64 bytes, so a `PATH_MAX' buffer always holds it whole.
+ *          name returns the length it would have needed.  Even with an extreme
+ *          `lay_cnt', `st' and `interval' the name is at most 78 bytes (21 for
+ *          the directory, 10 + 20 + 20 for the three fields, 7 for the
+ *          separators and the suffix), so a `PATH_MAX' buffer always holds it
+ *          whole.
  */
 int temp_full_path(char *buf, size_t size, unsigned int lay_cnt, int64_t st,
                    int64_t interval);

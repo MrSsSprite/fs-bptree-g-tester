@@ -110,10 +110,12 @@ int main(void)
  * instantiated.
  *
  * @note  Loading and unloading an image rewrites its header block: the library
- *        always flushes that block from the shared scratch buffer it marshals
- *        nodes through, so the bytes past the header keep whatever node image
- *        was left there.  Only the blocks past block 0 are the image's content;
- *        a fixture must not be pinned by the hash of the whole file.
+ *        flushes that whole block from the shared scratch buffer it marshals
+ *        nodes through, so the bytes past the header end up holding whatever
+ *        node image was left there -- they change as soon as that leftover
+ *        differs, though a load that fetches no node leaves the file alone.
+ *        The header itself and every node block are stable; a fixture must not
+ *        be pinned by the hash of the whole file.
  */
 void test_temp(void)
 {
