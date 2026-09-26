@@ -80,8 +80,9 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
  * @return  TEMP_FULL_OK (0) on success; TEMP_FULL_E_LAY_CNT or
  *          TEMP_FULL_E_NODE_SIZE (negative: the request cannot be served) or a
  *          positive environment error otherwise.  An error is named by
- *          `temp_full_strerror' and reported on stderr, with the fixture path
- *          whenever one has been built.
+ *          `temp_full_strerror' and reported on stderr with the path being
+ *          worked on, once there is one: the fixture directory first, then the
+ *          fixture path.
  *
  * @note    Returns TEMP_FULL_OK without touching a file that already exists and
  *          matches the requested layout; a file that does not match, be it a
@@ -94,9 +95,10 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
  *          failure inside the library's own file and cache code looks like from
  *          here -- a header that cannot be written, a node that cannot be
  *          allocated, a flush that fails while a node is evicted -- so an
- *          environment error can be reported under one of them; `bptr_errno'
- *          and `errno' carry the library's reason.  Only the final flush is
- *          reported as TEMP_FULL_E_WRITE.
+ *          environment error can be reported under one of them.  `bptr_errno'
+ *          then carries the library's reason; `errno' may already have been
+ *          overwritten by the cleanup the failure triggered.  Only the final
+ *          flush is reported as TEMP_FULL_E_WRITE.
  */
 int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
                        _Bool is_lite, uint32_t node_size)

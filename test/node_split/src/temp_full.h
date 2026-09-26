@@ -11,8 +11,9 @@
 /* Status of `temp_full_generate'.  A request that cannot be served is negative
  * and an environment failure positive, mirroring the `BPTR_E_*' convention of
  * `bptree.h'; only TEMP_FULL_OK means the fixture is complete.  Every code is
- * named by `temp_full_strerror', and `errno' (or `bptr_errno') carries the
- * underlying reason where there is one. */
+ * named by `temp_full_strerror'; `bptr_errno' carries the library's reason where
+ * there is one, while `errno' may already have been overwritten by the cleanup
+ * the failure triggered. */
 #define TEMP_FULL_OK           (0)  /* the fixture is complete */
 #define TEMP_FULL_E_LAY_CNT    (-1) /* lay_cnt is 0 or taller than the node cache */
 #define TEMP_FULL_E_NODE_SIZE  (-2) /* node_size cannot hold a full node */
