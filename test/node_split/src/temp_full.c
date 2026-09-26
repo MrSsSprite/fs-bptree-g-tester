@@ -34,32 +34,25 @@
 /*---------------------------- Private Macros END ----------------------------*/
 
 
-/*---------------------------- Private Variables -----------------------------*/
-/* fixture being written by `temp_full_generate'; "" when none is in flight */
-static char _gen_path[PATH_MAX];
-/*-------------------------- Private Variables END ---------------------------*/
-
-
 /*--------------------------- Forward Declarations ---------------------------*/
 static long long ensure_par_dirs(char *path, mode_t mode);
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx);
 static int _copy_file(const char *dst, const char *src);
-static int _gen_path_drop(void);
+static void _gen_drop(const char *path);
+static int _gen_fail(int status, const char *path);
 static int _fixture_matches(const char *path, unsigned int lay_cnt,
                             _Bool is_lite, uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
                             int64_t *st, int64_t interval);
-static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
-                              struct bptr_node *node);
-static void _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
-                       struct bptr_node *node, int64_t *st, int64_t interval,
-                       int64_t *lmk);
-static struct bptr_node *create_child(struct bptr *self,
-                                      bptr_node_t *prev_at_level,
-                                      struct bptr_node *par_n,
-                                      int64_t *st, int64_t interval,
-                                      int64_t *lmk);
+static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
+                             struct bptr_node *node);
+static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
+                      struct bptr_node *node, int64_t *st, int64_t interval,
+                      int64_t *lmk);
+static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
+                        struct bptr_node *par_n, int64_t *st, int64_t interval,
+                        int64_t *lmk, struct bptr_node **out);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -74,21 +67,38 @@ static struct bptr_node *create_child(struct bptr *self,
  * the 0th key of the leftmost descendant leaf of its (i + 1)th child.  Every
  * level forms one doubly linked list crossing parent boundaries.
  *
+ * A plain function rather than a test case: it does not assert, so it does not
+ * need a Unity abort frame to be callable, and the caller decides how a failure
+ * is surfaced.
+ *
  * @param[in] lay_cnt    number of levels; 1 yields a single leaf
  * @param[in] st         first key
  * @param[in] interval   distance between two successive keys
  * @param[in] is_lite    use the 4-byte child pointer layout
  * @param[in] node_size  size of a node in bytes
  *
- * @return  0 on success; non-0 on failure, with the partial fixture removed
+ * @return  TEMP_FULL_OK (0) on success; TEMP_FULL_E_LAY_CNT or
+ *          TEMP_FULL_E_NODE_SIZE (negative: the request cannot be served) or a
+ *          positive environment error otherwise.  An error is named by
+ *          `temp_full_strerror' and reported on stderr with the path being
+ *          worked on, once there is one: the fixture directory first, then the
+ *          fixture path.
  *
- * @note    Returns 0 without touching a file that already exists and matches
- *          the requested layout; a file that does not match, be it a partial
- *          image left by an aborted run or one built with other parameters,
- *          is reported as a failure so that it cannot be served silently.
- * @note    A failure reported through a Unity assertion does not return, so
- *          the caller has to drop the fixture through @c temp_full_discard ;
- *          every other failure is cleaned up here.
+ * @note    Returns TEMP_FULL_OK without touching a file that already exists and
+ *          matches the requested layout; a file that does not match, be it a
+ *          partial image left by an interrupted run or one built with other
+ *          parameters, is reported as TEMP_FULL_E_FIXTURE and left untouched,
+ *          so that it cannot be served silently.
+ * @note    Every other failure removes the partial image before returning, so a
+ *          failed call does not leave a partial fixture behind.
+ * @note    TEMP_FULL_E_INIT, TEMP_FULL_E_ALLOC and TEMP_FULL_E_CHAIN are what a
+ *          failure inside the library's own file and cache code looks like from
+ *          here -- a header that cannot be written, a node that cannot be
+ *          allocated, a flush that fails while a node is evicted -- so an
+ *          environment error can be reported under one of them.  `bptr_errno'
+ *          then carries the library's reason; `errno' may already have been
+ *          overwritten by the cleanup the failure triggered.  Only the final
+ *          flush is reported as TEMP_FULL_E_WRITE.
  */
 int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
                        _Bool is_lite, uint32_t node_size)
@@ -100,60 +110,51 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    bptr_node_t *prev_at_level;
    uint32_t ptr_size;
    long long len;
+   int status = TEMP_FULL_OK;
    int64_t st_it = st, lmk;
 
    /* a node level is stored in a uint16_t; the node cache also caps the height
     * (see `FULL_GEN_CACHE_CAP') */
    if (lay_cnt == 0 || lay_cnt > FULL_GEN_CACHE_CAP - 2u)
-    { perror("lay_cnt out of range"); return 1; }
+      return _gen_fail(TEMP_FULL_E_LAY_CNT, NULL);
    /* the smallest node `bptr_init' accepts: metadata and one key plus the two
     * child pointers of its minimum fanout, so that a request which could
     * never build a tree is refused before any file is consulted or created */
    ptr_size = is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE;
    if (node_size < BPTR_NODE_METADATA_BYTE + ptr_size +
                    2 * ((uint32_t)sizeof (int64_t) + ptr_size))
-    { perror("node_size out of range"); return 1; }
-
-   /* drop a fixture left armed by an aborted call before writing anything */
-   if (_gen_path_drop())
-    {
-      fprintf(stderr, "temp_full_generate: cannot drop %s\n", _gen_path);
-      return 1;
-    }
+      return _gen_fail(TEMP_FULL_E_NODE_SIZE, NULL);
 
    len = ensure_par_dirs(path, 0755);
-   if (len == -1) { perror("mkdir_parents"); return 1; }
+   if (len == -1) return _gen_fail(TEMP_FULL_E_DIR, path);
    sprintf(path + len, "%u-%" PRIi64 "-%" PRIi64 ".bptr",
            lay_cnt, st, interval);
 
    if (stat(path, &fst) == 0 && S_ISREG(fst.st_mode))
     {
       /* a fixture written by an earlier run is reused as is, but only when it
-       * really is one: a partial image left by an aborted run, or an image
+       * really is one: a partial image left by an interrupted run, or an image
        * built with some other layout, must not be served silently */
-      switch (_fixture_matches(path, lay_cnt, is_lite, node_size))
-       {
-      case 1  : return 0;
-      case 0  :
-         fprintf(stderr, "temp_full_generate: %s is not a complete fixture of "
-                         "this layout; delete it and retry\n", path);
-         return 1;
-      default :
-         fprintf(stderr, "temp_full_generate: cannot read %s\n", path);
-         return 1;
-       }
+      status = _fixture_matches(path, lay_cnt, is_lite, node_size);
+      if (status != TEMP_FULL_OK) return _gen_fail(status, path);
+      return TEMP_FULL_OK;
     }
    bptr = bptr_init(path, is_lite, node_size,
                     sizeof(int64_t), sizeof(int64_t), FULL_GEN_CACHE_CAP,
                     cmp_i64);
-   if (bptr == NULL) { perror("bptr_init"); remove(path); return 1; }
-   /* a full tree cannot carry a key if a leaf holds none */
+   if (bptr == NULL)
+    {
+      /* `bptr_init' creates the file before it can still fail: drop whatever it
+       * left behind */
+      _gen_drop(path);
+      return _gen_fail(TEMP_FULL_E_INIT, path);
+    }
+   /* a full tree cannot carry a key if a leaf holds none; unreachable while the
+    * guard above mirrors `bptr_init''s minimum fanout, kept as a belt */
    if (bptr->node_bound.leaf.up < 2)
     {
-      perror("node_size too small: leaf.up < 2");
-      bptr_unload(bptr);
-      remove(path);
-      return 1;
+      status = TEMP_FULL_E_NODE_SIZE;
+      goto GEN_ERR;
     }
 
    /* `prev_at_level[i]' holds the index of the node most recently created at
@@ -162,16 +163,9 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
    prev_at_level = calloc(lay_cnt, sizeof (bptr_node_t));
    if (prev_at_level == NULL)
     {
-      perror("calloc");
-      bptr_unload(bptr);
-      remove(path);
-      return 1;
+      status = TEMP_FULL_E_ALLOC;
+      goto GEN_ERR;
     }
-
-   /* the fixture now exists but is incomplete: remember it, so that a Unity
-    * assertion, which does not return, can still be unwound into
-    * `temp_full_discard' by the caller */
-   strcpy(_gen_path, path);
 
    /* The node layout (is_leaf, flags and the keys/vals split) is derived from
     * the node level at creation.  `bptr_node_new' increments `height' when the
@@ -180,37 +174,56 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
     * node, rather than the leaf layout of a fresh tree. */
    bptr->height = lay_cnt - 1;
    node = bptr_node_new(bptr, 0);
-   if (node == NULL) { perror("bptr_node_new"); goto GEN_ERR; }
+   if (node == NULL)
+    {
+      status = TEMP_FULL_E_ALLOC;
+      goto GEN_ERR_FREE;
+    }
    bptr->node_cnt = 1;
    bptr->root_idx = node->node_idx;
-   _level_chain_push(bptr, prev_at_level, node);
-   _node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk);
+   status = _level_chain_push(bptr, prev_at_level, node);
+   if (status == TEMP_FULL_OK)
+      status = _node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk);
    bptr_node_unload(bptr, node);
+   if (status != TEMP_FULL_OK) goto GEN_ERR_FREE;
 
    free(prev_at_level);
    if (bptr_unload(bptr))
     {
-      perror("bptr_unload");
-      remove(path);
-      _gen_path[0] = '\0';
-      return 1;
+      /* the final flush failed: the image is incomplete, drop it */
+      _gen_drop(path);
+      return _gen_fail(TEMP_FULL_E_WRITE, path);
     }
-   _gen_path[0] = '\0';
-   return 0;
+   return TEMP_FULL_OK;
 
    /*-------------------------- Error Handling Zone --------------------------*/
-GEN_ERR:
+GEN_ERR_FREE:
    free(prev_at_level);
+GEN_ERR:
    bptr_unload(bptr);   /* best effort: flush what has been written ... */
-   remove(path);        /* ... then drop the partial fixture */
-   _gen_path[0] = '\0';
-   return 1;
+   _gen_drop(path);     /* ... then drop the incomplete image */
+   return _gen_fail(status, path);
 }
 
 
-void temp_full_discard(void)
+const char *temp_full_strerror(int status)
 {
-   (void)_gen_path_drop();
+   switch (status)
+    {
+   case TEMP_FULL_OK           : return "success";
+   case TEMP_FULL_E_LAY_CNT    : return "lay_cnt out of range";
+   case TEMP_FULL_E_NODE_SIZE  : return "node_size out of range";
+   case TEMP_FULL_E_FIXTURE    : return "not a complete fixture of this layout; "
+                                        "delete it and retry";
+   case TEMP_FULL_E_UNREADABLE : return "cannot be read";
+   case TEMP_FULL_E_DIR        : return "the fixture directory cannot be "
+                                        "created";
+   case TEMP_FULL_E_INIT       : return "the fixture cannot be created";
+   case TEMP_FULL_E_ALLOC      : return "out of memory";
+   case TEMP_FULL_E_CHAIN      : return "the level list cannot be linked";
+   case TEMP_FULL_E_WRITE      : return "the fixture cannot be written";
+   default                     : return "unknown status";
+    }
 }
 
 
@@ -474,18 +487,19 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
  * @brief   Check whether an existing file is the fixture that was asked for
  *
  * The header is read directly (see `core/docs/header_bin_layout.md'): a
- * partial image left by an aborted run still carries the header written when
- * the file was created, whence a height of 0 and no node count.  The checks
- * prove that the file is consistent with the request, not that this generator
- * wrote it: `st' and `interval' live only in the file name.
+ * partial image left by an interrupted run still carries the header written
+ * when the file was created, whence a height of 0 and no node count.  The
+ * checks prove that the file is consistent with the request, not that this
+ * generator wrote it: `st' and `interval' live only in the file name.
  *
  * @param[in] path       file to inspect
  * @param[in] lay_cnt    number of levels the caller asked for
  * @param[in] is_lite    child pointer layout the caller asked for
  * @param[in] node_size  node size the caller asked for
  *
- * @return  1 if @p path is a complete fixture of that layout, 0 if it is not,
- *          and -1 if it cannot be read.
+ * @return  TEMP_FULL_OK if @p path is a complete fixture of that layout,
+ *          TEMP_FULL_E_FIXTURE if it is not, and TEMP_FULL_E_UNREADABLE if it
+ *          cannot be read.
  */
 static int _fixture_matches(const char *path, unsigned int lay_cnt,
                             _Bool is_lite, uint32_t node_size)
@@ -499,13 +513,14 @@ static int _fixture_matches(const char *path, unsigned int lay_cnt,
    size_t rd;
 
    file = fopen(path, "rb");
-   if (file == NULL) return -1;
+   if (file == NULL) return TEMP_FULL_E_UNREADABLE;
    /* measure through the open handle: the file must not change between the
     * size and the content check */
-   if (fstat(fileno(file), &fst) == -1) { fclose(file); return -1; }
+   if (fstat(fileno(file), &fst) == -1)
+    { fclose(file); return TEMP_FULL_E_UNREADABLE; }
    rd = fread(hdr, 1, sizeof hdr, file);
    fclose(file);
-   if (rd < sizeof hdr) return 0;
+   if (rd < sizeof hdr) return TEMP_FULL_E_FIXTURE;
 
    memcpy(&version, hdr + 4, sizeof version);
    memcpy(&stored_node_size, hdr + 8, sizeof stored_node_size);
@@ -518,7 +533,7 @@ static int _fixture_matches(const char *path, unsigned int lay_cnt,
        stored_node_size != node_size ||
        key_size != sizeof (int64_t) || value_size != sizeof (int64_t) ||
        height != lay_cnt)
-      return 0;
+      return TEMP_FULL_E_FIXTURE;
 
    /* node_cnt is the 4th pointer-sized field of the header */
    if (is_lite)
@@ -533,13 +548,14 @@ static int _fixture_matches(const char *path, unsigned int lay_cnt,
       memcpy(&cnt, hdr + 28 + 3 * BPTR_NORM_PTR_BYTE, sizeof cnt);
       node_cnt = cnt;
     }
-   if (node_cnt == 0) return 0;
+   if (node_cnt == 0) return TEMP_FULL_E_FIXTURE;
 
    /* unsigned and overflow free: `node_cnt' is read from the file, and the
     * block count cannot exceed the size of the file */
    blocks = (uint_fast64_t)fst.st_size / (uint_fast64_t)node_size;
-   if ((uint_fast64_t)fst.st_size % (uint_fast64_t)node_size) return 0;
-   return blocks == node_cnt + 1;
+   if ((uint_fast64_t)fst.st_size % (uint_fast64_t)node_size)
+      return TEMP_FULL_E_FIXTURE;
+   return blocks == node_cnt + 1 ? TEMP_FULL_OK : TEMP_FULL_E_FIXTURE;
 }
 
 
@@ -557,11 +573,11 @@ static int _fixture_matches(const char *path, unsigned int lay_cnt,
  *                               0 if none
  * @param[in,out] node           node to append; @c prev and @c next are set
  *
- * @note  A failed fetch is reported through a Unity assertion, which does not
- *        return.
+ * @return  TEMP_FULL_OK on success; TEMP_FULL_E_CHAIN when the left sibling
+ *          cannot be fetched
  */
-static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
-                              struct bptr_node *node)
+static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
+                             struct bptr_node *node)
 {
    struct bptr_node *prev_n;
 
@@ -570,16 +586,17 @@ static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
    if (prev_at_level[node->level] == 0)
     {
       prev_at_level[node->level] = node->node_idx;
-      return;
+      return TEMP_FULL_OK;
     }
 
    prev_n = bptr_node_fetch(self, prev_at_level[node->level]);
-   TEST_ASSERT_NOT_NULL_MESSAGE(prev_n, "_level_chain_push: bptr_node_fetch");
+   if (prev_n == NULL) return TEMP_FULL_E_CHAIN;
    prev_n->next = node->node_idx;
    prev_n->is_dirty = 1;
    bptr_node_unload(self, prev_n);
 
    prev_at_level[node->level] = node->node_idx;
+   return TEMP_FULL_OK;
 }
 
 
@@ -595,38 +612,44 @@ static void _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
  * @param[out]    lmk            leftmost key of the filled subtree, i.e., the
  *                               0th key of its leftmost descendant leaf
  *
- * @note  Failures are reported through Unity assertions inside
- *        @c create_child ; this function does not return on failure.
+ * @return  TEMP_FULL_OK on success; the status of the @c create_child call that
+ *          failed otherwise
  */
-static void _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
-                       struct bptr_node *node, int64_t *st, int64_t interval,
-                       int64_t *lmk)
+static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
+                      struct bptr_node *node, int64_t *st, int64_t interval,
+                      int64_t *lmk)
 {
    struct bptr_node *child;
    int64_t iter_lmk;
+   int status;
 
    // base case
    if (node->is_leaf)
     {
       _node_fill_leaf(self, node, st, interval);
       *lmk = ((int64_t*)node->keys)[0];
-      return;
+      return TEMP_FULL_OK;
     }
 
    /* leftmost child; its leftmost key is also the one of `node' */
-   child = create_child(self, prev_at_level, node, st, interval, lmk);
+   status = create_child(self, prev_at_level, node, st, interval, lmk, &child);
+   if (status != TEMP_FULL_OK) return status;
    _node_brch_vals_set(self, node, 0, child->node_idx);
    bptr_node_unload(self, child);
 
    for (; node->key_count < self->node_bound.brch.up - 1; node->key_count++)
     {
-      child = create_child(self, prev_at_level, node, st, interval, &iter_lmk);
+      status = create_child(self, prev_at_level, node, st, interval,
+                            &iter_lmk, &child);
+      if (status != TEMP_FULL_OK) return status;
       /* the ith key of an internal node is the 0th key of the leftmost
        * descendant leaf of its (i + 1)th child */
       ((int64_t*)node->keys)[node->key_count] = iter_lmk;
       _node_brch_vals_set(self, node, node->key_count + 1, child->node_idx);
       bptr_node_unload(self, child);
     }
+
+   return TEMP_FULL_OK;
 }
 
 
@@ -640,45 +663,69 @@ static void _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
  * @param[in,out] st             key cursor; advances as keys are laid down
  * @param[in]     interval       distance between two successive keys
  * @param[out]    lmk            leftmost key of the created subtree
+ * @param[out]    out            the created, still loaded node on success
  *
- * @return  the created, still loaded node
- *
- * @note  A failed node creation is reported through a Unity assertion, which
- *        does not return.
+ * @return  TEMP_FULL_OK on success; TEMP_FULL_E_ALLOC when the node cannot be
+ *          created, and the status of the failed link or fill otherwise
  */
-static struct bptr_node *create_child(struct bptr *self,
-                                      bptr_node_t *prev_at_level,
-                                      struct bptr_node *par_n,
-                                      int64_t *st, int64_t interval,
-                                      int64_t *lmk)
+static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
+                        struct bptr_node *par_n, int64_t *st, int64_t interval,
+                        int64_t *lmk, struct bptr_node **out)
 {
    struct bptr_node *node = bptr_node_new(self, par_n->node_idx);
+   int status;
 
-   TEST_ASSERT_NOT_NULL_MESSAGE(node, "create_child: bptr_node_new");
+   if (node == NULL) return TEMP_FULL_E_ALLOC;
    self->node_cnt++;
 
-   _level_chain_push(self, prev_at_level, node);
-   _node_fill(self, prev_at_level, node, st, interval, lmk);
+   status = _level_chain_push(self, prev_at_level, node);
+   if (status == TEMP_FULL_OK)
+      status = _node_fill(self, prev_at_level, node, st, interval, lmk);
+   if (status != TEMP_FULL_OK)
+    {
+      /* the subtree is incomplete: the top level drops the whole image */
+      bptr_node_unload(self, node);
+      return status;
+    }
 
-   return node;
+   *out = node;
+   return TEMP_FULL_OK;
 }
 
 
 /**
- * @brief   Drop the fixture armed by a `temp_full_generate' call
+ * @brief   Drop the incomplete image a failed generation left behind
  *
- * The path stays armed when the file could not be removed for any reason but
- * a missing one, so that a later call can retry it.
+ * @param[in] path  fixture to remove
  *
- * @return  0 when no path is armed or the file was removed; non-0 otherwise.
+ * @note    A removal that fails is reported on stderr: the next call would
+ *          otherwise report the leftover as TEMP_FULL_E_FIXTURE.
  */
-static int _gen_path_drop(void)
+static void _gen_drop(const char *path)
 {
-   if (_gen_path[0] == '\0') return 0;
+   if (remove(path) && errno != ENOENT)
+      fprintf(stderr, "temp_full_generate: %s: cannot be removed\n", path);
+}
 
-   if (remove(_gen_path) && errno != ENOENT) return 1;
-   _gen_path[0] = '\0';
-   return 0;
+
+/**
+ * @brief   Report a failed generation on stderr and hand back its status
+ *
+ * @param[in] status  code to report and return
+ * @param[in] path    fixture the call was working on, or NULL when the request
+ *                    was refused before a path existed
+ *
+ * @return  @p status, so that a caller can `return _gen_fail(...)'
+ */
+static int _gen_fail(int status, const char *path)
+{
+   if (path == NULL)
+      fprintf(stderr, "temp_full_generate: %s\n", temp_full_strerror(status));
+   else
+      fprintf(stderr, "temp_full_generate: %s: %s\n", path,
+              temp_full_strerror(status));
+
+   return status;
 }
 
 
