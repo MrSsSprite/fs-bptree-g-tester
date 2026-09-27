@@ -356,6 +356,10 @@ void temp_full_verify(struct bptr *bptr,
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(next_n->node_idx,
                                        _node_brch_vals_get(bptr, par_n, i),
                                        "par_n->vals[i] != next_n idx");
+      /* a split hands the children it moves over to the new sibling; the leaf
+       * has to know which node it hangs from, not only the other way round */
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, next_n->parent,
+                                       "next_n parent != its parent");
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, next_n->prev,
                                        "next_n prev != node");
       bptr_node_unload(bptr, node);
