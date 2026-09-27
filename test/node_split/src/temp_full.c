@@ -466,6 +466,12 @@ void temp_full_verify(struct bptr *bptr,
          node = following_n;
        }
 
+      /* the walk leaves the level at the end it did not start from; that node
+       * terminates the chain, and this pass has only read the links that
+       * pointed the way it came from */
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, ltr ? prior_n->next : prior_n->prev,
+                                       "internal node chain not terminated");
+
       node = prior_n;  // extreme node of this layer, still loaded
     }
    if (bptr->height > 1) bptr_node_unload(bptr, node);
