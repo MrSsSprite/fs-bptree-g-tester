@@ -760,7 +760,12 @@ static int _copy_file(const char *dst, const char *src)
     {
       char *p = buf;
       ssize_t written;
-      while (n > 0 && (written = write(dfd, p, n) > 0))
+      /* `written' must be the byte count `write' reports, not a boolean: with
+       * the parentheses around the comparison the whole remaining buffer is
+       * written at every step while the cursor advances by one byte, so the
+       * destination grows by n + (n - 1) + ... bytes and ends with a garbage
+       * tail of the same bytes rewritten. */
+      while (n > 0 && (written = write(dfd, p, n)) > 0)
        { p += written; n -= written; }
       if (written < 0 || n != 0)
        { perror("write dfd"); close(dfd); close(sfd); return -1; }
