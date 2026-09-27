@@ -382,18 +382,23 @@ void temp_full_verify(struct bptr *bptr,
        }
       leaf_cnt++;
     }
+   /* `st' walks the keys of the original `st' sequence only: the inserted key
+    * is skipped where it is met, and the leaf it was added to was split in
+    * two, so the walk sees the keys of `leaf_cnt - 1' full leaves.  The
+    * inserted record is one more than that in the tree's own count. */
    if (has_new_kv)
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         ((leaf_cnt - 1) * (bptr->node_bound.leaf.up - 1) + 1) * interval,
+         ((int64_t)(leaf_cnt - 1) * (bptr->node_bound.leaf.up - 1)) * interval,
          st,
          "record count (derived from st) not correct");
    else
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         leaf_cnt * (bptr->node_bound.leaf.up - 1) * interval,
+         (int64_t)leaf_cnt * (bptr->node_bound.leaf.up - 1) * interval,
          st,
          "record count (derived from st) not correct");
-   TEST_ASSERT_EQUAL_UINT64_MESSAGE(st / interval, bptr->record_cnt,
-                                    "record count does not match st");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      (uint64_t)(st / interval) + (has_new_kv ? 1u : 0u), bptr->record_cnt,
+      "record count does not match st");
 
    /*----------------------- check internal node layers ----------------------*/
    // The leaf layer has been traversed to its far right; walk every internal
