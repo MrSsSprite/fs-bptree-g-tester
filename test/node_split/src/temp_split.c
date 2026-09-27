@@ -73,7 +73,10 @@ static size_t split_gap_cnt(const struct split_layout *lay)
 {
    if (lay->lay_cnt <= 2) return lay->rec_cnt + 1;
 
-   /* the two ends, then one position per (leaf, level-1, root) role triple */
+   /* the two ends, then one position per (leaf, level-1, root) role triple.
+    * The last leaf's last position is the end of the image, so that one is
+    * tried twice; a repeated position costs one insertion and keeps the
+    * mapping from index to position free of special cases. */
    return 2 + SPLIT_ROLE_CNT * SPLIT_ROLE_CNT * SPLIT_LEAF_CNT;
 }
 
