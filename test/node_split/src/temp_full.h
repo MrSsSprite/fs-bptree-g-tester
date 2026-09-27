@@ -28,6 +28,34 @@
 /*---------------------------- Public Defines END ----------------------------*/
 
 
+/*------------------------------ Public Structs ------------------------------*/
+/**
+ * @brief   One template the unit is built on
+ *
+ * The shape a template is generated with.  `gen_full_fixtures' writes one image
+ * per entry of `FULL_FIXTURES', `test_temp' verifies one per entry and the
+ * split cases instantiate one per entry, so the three cannot drift apart: every
+ * template a case may modify is a template that has been checked first.
+ */
+struct full_fixture
+{
+   unsigned int lay_cnt;   /* number of levels; 1 yields a single leaf */
+   int64_t      st;        /* first key */
+   int64_t      interval;  /* distance between two successive keys */
+   _Bool        is_lite;   /* use the 4-byte child pointer layout */
+   uint32_t     node_size; /* size of a node in bytes */
+};
+/*---------------------------- Public Structs END ----------------------------*/
+
+
+/*----------------------- Public Variable Declarations -----------------------*/
+/* the images of the unit: 1, 2 and 3 levels tall, keys starting at 0 and
+ * stepping by 0x10, in the default lite 512-byte layout */
+extern const struct full_fixture FULL_FIXTURES[];
+extern const size_t FULL_FIXTURES_SZ;
+/*--------------------- Public Variable Declarations END ---------------------*/
+
+
 /*----------------------------- Public Functions -----------------------------*/
 /**
  * @brief   Path of the fixture `temp_full_generate' serves a request with
@@ -80,6 +108,19 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
  * @return  a static human readable description of @p status
  */
 const char *temp_full_strerror(int status);
+/**
+ * @brief   Copy a canned image to `bptr_files/<path>'
+ *
+ * The split cases start every insertion from the same pristine template: this
+ * copies it to a name of their own instead of loading and modifying the
+ * template itself.  The parent directories of @p path are created as needed.
+ *
+ * @param[in] path  destination, relative to `bptr_files/'
+ * @param[in] temp  image to copy, relative to the working directory
+ *
+ * @return  0 when the image was copied, 1 when @p path already exists (it is
+ *          left untouched) and -1 when the copy failed.
+ */
 int temp_instantiate(const char *path, const char *temp);
 void temp_full_verify(struct bptr *bptr,
                       unsigned int lay_cnt, int64_t st, int64_t interval,

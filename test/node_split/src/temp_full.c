@@ -59,6 +59,18 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
 /*------------------------- Forward Declarations END -------------------------*/
 
 
+/*----------------------------- Public Variables -----------------------------*/
+const struct full_fixture FULL_FIXTURES[] =
+{
+   { 1, 0, 0x10, 1, 512 },
+   { 2, 0, 0x10, 1, 512 },
+   { 3, 0, 0x10, 1, 512 },
+};
+
+const size_t FULL_FIXTURES_SZ = sizeof FULL_FIXTURES / sizeof FULL_FIXTURES[0];
+/*---------------------------- Public Variable END ---------------------------*/
+
+
 /*----------------------------- Public Functions -----------------------------*/
 int temp_full_path(char *buf, size_t size, unsigned int lay_cnt, int64_t st,
                    int64_t interval)
