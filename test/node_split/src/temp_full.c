@@ -416,6 +416,23 @@ void temp_full_verify(struct bptr *bptr,
       (uint64_t)(st / interval) + (has_new_kv ? 1u : 0u), bptr->record_cnt,
       "record count does not match st");
 
+   /* A template holds one node per level of its shape: `brch.up' children per
+    * node means `brch.up^(lay_cnt - 1)' leaves and one node per node above
+    * them.  The split of a full image adds one sibling per level and, over the
+    * root it split, one new root. */
+   {
+      uint_fast64_t level_cnt = 1, expect_node_cnt = 0;
+
+      for (uint32_t level = 0; level < lay_cnt; level++)
+       {
+         expect_node_cnt += level_cnt;
+         level_cnt *= bptr->node_bound.brch.up;
+       }
+      if (has_new_kv) expect_node_cnt += lay_cnt + 1;
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(expect_node_cnt, bptr->node_cnt,
+                                       "node count incorrect");
+   }
+
    /*----------------------- check internal node layers ----------------------*/
    // The leaf layer has been traversed to its far right; walk every internal
    // layer from the extreme node left by the previous one, checking the sibling
