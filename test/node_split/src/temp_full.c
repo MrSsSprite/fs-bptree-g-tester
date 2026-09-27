@@ -341,6 +341,9 @@ void temp_full_verify(struct bptr *bptr,
    for (uint32_t i = 1; node->next; i++)
     {
       next_n = bptr_node_fetch(bptr, node->next);
+      /* the fetch of the next sibling is dereferenced below: a cache too small
+       * for the walk has to fail the check, not crash inside it */
+      TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to load next node");
       if (i == _node_val_cnt(par_n))
        {
          struct bptr_node *next_par_n;
