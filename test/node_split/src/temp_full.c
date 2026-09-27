@@ -299,6 +299,9 @@ void temp_full_verify(struct bptr *bptr,
        {
          TEST_ASSERT_EQUAL_INT64_MESSAGE(val, ((int64_t*)node->vals)[i],
                                          "leaf val not match");
+         /* the inserted key is passed: every key from here on belongs to the
+          * original `st' sequence again and must sort after it */
+         has_met_new_kv = 1;
        }
       else
        {
@@ -353,6 +356,7 @@ void temp_full_verify(struct bptr *bptr,
           {
             TEST_ASSERT_EQUAL_INT64_MESSAGE(val, ((int64_t*)node->vals)[i],
                                             "leaf val not match");
+            has_met_new_kv = 1;
           }
          else
           {
