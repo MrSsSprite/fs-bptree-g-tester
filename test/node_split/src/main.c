@@ -5,6 +5,7 @@
 #include "unity.h"
 #include "unity_internals.h"
 #include "temp_full.h"
+#include "temp_split.h"
 #include "bptree.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
@@ -17,34 +18,6 @@ void tearDown(void) { }
 void test_temp(void);
 
 /*----------------------------- Fixture Utility ------------------------------*/
-/**
- * @brief   One template the split cases are built on
- *
- * The shape a template is generated with.  `gen_full_fixtures' writes one
- * image per entry and `test_temp' verifies one per entry, so the two cannot
- * drift apart: every template a case may instantiate is a template that has
- * been checked first.
- */
-struct full_fixture
-{
-   unsigned int lay_cnt;   /* number of levels; 1 yields a single leaf */
-   int64_t      st;        /* first key */
-   int64_t      interval;  /* distance between two successive keys */
-   _Bool        is_lite;   /* use the 4-byte child pointer layout */
-   uint32_t     node_size; /* size of a node in bytes */
-};
-
-/* the images of the unit: 1, 2 and 3 levels tall, keys starting at 0 and
- * stepping by 0x10, in the default lite 512-byte layout */
-static const struct full_fixture FULL_FIXTURES[] =
-{
-   { 1, 0, 0x10, 1, 512 },
-   { 2, 0, 0x10, 1, 512 },
-   { 3, 0, 0x10, 1, 512 },
-};
-
-#define FULL_FIXTURE_CNT (sizeof (FULL_FIXTURES) / sizeof (FULL_FIXTURES[0]))
-
 /**
  * @brief   Generate every template the cases below load
  *
@@ -59,7 +32,7 @@ static const struct full_fixture FULL_FIXTURES[] =
  */
 static int gen_full_fixtures(void)
 {
-   for (size_t i = 0; i < FULL_FIXTURE_CNT; i++)
+   for (size_t i = 0; i < FULL_FIXTURES_SZ; i++)
     {
       const struct full_fixture *fx = &FULL_FIXTURES[i];
       int status = temp_full_generate(fx->lay_cnt, fx->st, fx->interval,
@@ -94,7 +67,9 @@ int main(void)
    /* the template guard: it proves the images the cases below instantiate, so
     * it has to stay the first case of the unit */
    RUN_TEST(test_temp);
-   //RUN_TEST(...);
+   /* every split case starts from a pristine copy of a template, so the guard
+    * above has to have verified them first */
+   RUN_TEST(test_full_split);
 
    return UNITY_END();
 }
@@ -121,7 +96,7 @@ void test_temp(void)
 {
    char path[PATH_MAX], msg[PATH_MAX + 32];
 
-   for (size_t i = 0; i < FULL_FIXTURE_CNT; i++)
+   for (size_t i = 0; i < FULL_FIXTURES_SZ; i++)
     {
       const struct full_fixture *fx = &FULL_FIXTURES[i];
       struct bptr *bptr;
