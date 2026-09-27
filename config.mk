@@ -20,6 +20,17 @@ TEST_UTIL_H_DIR := $(TEST_DIR)
 INCLDUES = $(UNITY_DIR)/src $(CORE_H_DIRS) $(TEST_UTIL_H_DIR)
 CPPFLAGS = $(addprefix -I, $(INCLDUES))
 
+# Reveal the `BPTR_STATIC' internals (`bptr_node_split', `bptr_find_node',
+# `bptr_node_prealloc') to the units: with the macro defined, `bptr_internal.h'
+# expands `BPTR_STATIC' to nothing instead of `static', so those functions keep
+# external linkage and can be called from a test.  It is set here, for every
+# unit, and not in one unit's Makefile: the core objects in `obj/core/' are
+# shared by every unit and make does not track the flags they were built with,
+# so a per-unit macro would silently link objects built against the other
+# setting.  A test that needs one of these symbols declares it in the unit's own
+# header (see `test/node_split/src/bptr_static.h').
+CPPFLAGS += -DBPTR_TESTING
+
 CORE_SRCS := $(shell find $(SRC_DIR) -name "*.c")
 CORE_OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/core/%.o, $(CORE_SRCS))
 $(OBJ_DIR)/core/%.o: $(SRC_DIR)/%.c
