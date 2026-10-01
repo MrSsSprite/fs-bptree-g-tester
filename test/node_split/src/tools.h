@@ -33,9 +33,11 @@
  * The stdout **and** the stderr of the tool are captured by the runner, not
  * inherited: a tool that does its job says nothing in the unit's log, because
  * the unit prints its own line for it.  A tool that fails has what it printed
- * replayed verbatim on **stderr**, ahead of the message the caller builds from
- * the status -- that report names the check that failed, which the status
- * alone does not.
+ * replayed on **stderr**, ahead of the message the caller builds from the
+ * status -- that report names the check that failed, which the status alone
+ * does not.  The replay is the bytes the tool wrote, except that a final line
+ * without a newline is terminated, so the caller's message starts on its own
+ * line.
  *
  * @param[in] argv  argument vector; `argv[0]' is the tool to run and the last
  *                  entry is NULL
