@@ -238,27 +238,42 @@ static struct bptr_node *split_descend(struct bptr *self, int64_t key)
 /*-------------------------------- Test Units --------------------------------*/
 void test_full_split(void)
 {
-   char tmpl[PATH_MAX], inst[PATH_MAX], path[PATH_MAX], msg[PATH_MAX + 64];
+   char inst[PATH_MAX], path[PATH_MAX], msg[PATH_MAX + 64];
+   const struct template *tmpls;
+   size_t tmpl_cnt;
 
-   for (size_t fx_i = 0; fx_i < FULL_FIXTURES_SZ; fx_i++)
+   tmpls = templates_get(&tmpl_cnt);
+
+   for (size_t tmpl_i = 0; tmpl_i < tmpl_cnt; tmpl_i++)
     {
-      const struct full_fixture *fx = &FULL_FIXTURES[fx_i];
+      const struct template *tmpl = &tmpls[tmpl_i];
       struct split_layout lay;
       struct bptr *bptr;
       struct bptr_node *node;
       int64_t st, interval, half;
       size_t gap_cnt;
 
-      /* the sampler below is written for a leaf level and two branch levels */
-      TEST_ASSERT_LESS_OR_EQUAL_UINT_MESSAGE(
-         3u, fx->lay_cnt, "no split positions for a template that tall");
+      /* the sampler below is written for a leaf level and two branch levels,
+       * and an inserted key has to fit between two keys of the image: a
+       * template the unit cannot split is skipped with a notice, never dropped
+       * silently */
+      if (tmpl->lay_cnt > 3)
+       {
+         printf("  skip %s: %u levels is more than the sampler covers\n",
+                tmpl->path, tmpl->lay_cnt);
+         continue;
+       }
+      if (tmpl->interval / 2 == 0)
+       {
+         printf("  skip %s: interval %" PRIi64 " leaves no room between two "
+                "keys\n", tmpl->path, tmpl->interval);
+         continue;
+       }
 
       /*----------------- the template the cases are built on ----------------*/
-      templates_path(tmpl, sizeof tmpl, TEMPLATES_DEFAULT_DIR, fx->lay_cnt,
-                     fx->st, fx->interval);
-      printf("  template %s\n", tmpl);
-      snprintf(msg, sizeof msg, "failed to load the template %s", tmpl);
-      bptr = bptr_load(tmpl, SPLIT_CACHE_CAP, &cmp_i64);
+      printf("  template %s\n", tmpl->path);
+      snprintf(msg, sizeof msg, "failed to load the template %s", tmpl->path);
+      bptr = bptr_load(tmpl->path, SPLIT_CACHE_CAP, &cmp_i64);
       TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
 
       node = split_leftmost_leaf(bptr);
@@ -266,7 +281,7 @@ void test_full_split(void)
       st = ((int64_t*)node->keys)[0];
       interval = ((int64_t*)node->keys)[1] - st;
       half = interval / 2;
-      lay.lay_cnt = fx->lay_cnt;
+      lay.lay_cnt = tmpl->lay_cnt;
       lay.leaf_up = (unsigned int)bptr->node_bound.leaf.up;
       lay.brch_up = (unsigned int)bptr->node_bound.brch.up;
       lay.rec_cnt = bptr->record_cnt;
@@ -275,9 +290,10 @@ void test_full_split(void)
       /* an inserted key has to fit between two keys of the template, or the
        * split would be handed a key the image already holds */
       snprintf(msg, sizeof msg, "%s: interval %" PRIi64 " leaves no room "
-               "between two keys", tmpl, interval);
+               "between two keys", tmpl->path, interval);
       TEST_ASSERT_NOT_EQUAL_INT64_MESSAGE(0, half, msg);
-      snprintf(msg, sizeof msg, "failed to unload the template %s", tmpl);
+      snprintf(msg, sizeof msg, "failed to unload the template %s",
+               tmpl->path);
       TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
 
       gap_cnt = split_gap_cnt(&lay);
@@ -293,7 +309,7 @@ void test_full_split(void)
          bptr_node_t sibling;
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
-                  fx->lay_cnt, gap_i);
+                  tmpl->lay_cnt, gap_i);
          _bptr_path(path, sizeof path, inst);
          printf("    split %s: key %" PRIi64 " (position %zu/%zu, %u keys "
                 "below it)\n", path, k, gap_i + 1, gap_cnt, gap);
@@ -302,8 +318,9 @@ void test_full_split(void)
           * copy refuses to overwrite a file that already exists */
          remove(path);
          snprintf(msg, sizeof msg, "failed to instantiate %s from %s",
-                  path, tmpl);
-         TEST_ASSERT_EQUAL_INT_MESSAGE(0, temp_instantiate(inst, tmpl), msg);
+                  path, tmpl->path);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, temp_instantiate(inst, tmpl->path),
+                                       msg);
 
          snprintf(msg, sizeof msg, "failed to load the instance %s", path);
          bptr = bptr_load(path, SPLIT_CACHE_CAP, &cmp_i64);
@@ -329,7 +346,7 @@ void test_full_split(void)
 
          /* every node of the template is full, so the split reached the root
           * and the tree has one level more than the template */
-         temp_full_verify(bptr, fx->lay_cnt, st, interval, 1, k, v);
+         temp_full_verify(bptr, tmpl->lay_cnt, st, interval, 1, k, v);
          snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
          TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
        }
@@ -341,7 +358,7 @@ void test_full_split(void)
          int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
-                  fx->lay_cnt, gap_i);
+                  tmpl->lay_cnt, gap_i);
          _bptr_path(path, sizeof path, inst);
          printf("    reload %s: key %" PRIi64 "\n", path, k);
 
@@ -351,7 +368,7 @@ void test_full_split(void)
 
          /* the split has to be in the file, not just in the cache it was
           * written through */
-         temp_full_verify(bptr, fx->lay_cnt, st, interval, 1, k, v);
+         temp_full_verify(bptr, tmpl->lay_cnt, st, interval, 1, k, v);
          snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
          TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
          TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path),

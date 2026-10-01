@@ -48,22 +48,50 @@ static int gen_full_fixtures(void)
 /*--------------------------- Fixture Utility END ----------------------------*/
 
 /*----------------------------------- MAIN -----------------------------------*/
-int main(void)
+int main(int argc, char *argv[])
 {
+   char reason[PATH_MAX + 128];
    int status;
 
    puts("Test Unit: node_split");
 
-   /* the fixtures the cases load are an input of this unit, not a case: build
-    * them here, and stop the run when they cannot be built rather than let a
-    * case discover a missing image */
-   status = gen_full_fixtures();
-   if (status != 0)
+   if (argc > 2)
     {
-      char msg[PATH_MAX + 128];
+      fprintf(stderr, "usage: %s [TEMPLATE_DIR]\n", argv[0]);
+      return EXIT_FAILURE;
+    }
 
-      tools_strstatus(msg, sizeof msg, TOOLS_TEMP_GEN, status);
-      fprintf(stderr, "node_split: cannot generate the fixtures: %s\n", msg);
+   if (argc == 2)
+    {
+      /* a directory of ready-made templates: the cases instantiate what they
+       * find there, so nothing is generated for them */
+      printf("node_split: using the templates in %s\n", argv[1]);
+      status = templates_load_dir(argv[1], reason, sizeof reason);
+    }
+   else
+    {
+      /* the fixtures the cases load are an input of this unit, not a case:
+       * build them here, and stop the run when they cannot be built rather
+       * than let a case discover a missing image */
+      printf("node_split: no template directory given; using the default %s\n",
+             TEMPLATES_DEFAULT_DIR);
+      status = gen_full_fixtures();
+      if (status != 0)
+       {
+         char msg[PATH_MAX + 128];
+
+         tools_strstatus(msg, sizeof msg, TOOLS_TEMP_GEN, status);
+         fprintf(stderr, "node_split: cannot generate the fixtures: %s\n",
+                 msg);
+         return EXIT_FAILURE;
+       }
+
+      status = templates_load_default(reason, sizeof reason);
+    }
+
+   if (status != TEMPLATES_OK)
+    {
+      fprintf(stderr, "node_split: %s\n", reason);
       return EXIT_FAILURE;
     }
 
@@ -82,11 +110,11 @@ int main(void)
 /**
  * @brief   Check every generated template before a modification is attempted
  *
- * The guard on the generator.  A split case is only meaningful once the image
- * it instantiates is known to be correct, so each template is loaded and walked
- * by `temp_full_verify' here, ahead of the cases that will modify one.  A
- * defect aborts the case -- and with it the run -- before anything is
- * instantiated.
+ * The guard on the templates.  A split case is only meaningful once the image
+ * it instantiates is known to be correct, so each template of the unit's list
+ * is loaded and walked by `temp_full_verify' here, ahead of the cases that will
+ * modify one.  A defect aborts the case -- and with it the run -- before
+ * anything is instantiated.
  *
  * @note  Loading and unloading an image rewrites its header block: the library
  *        flushes that whole block from the shared scratch buffer it marshals
@@ -98,24 +126,25 @@ int main(void)
  */
 void test_temp(void)
 {
-   char path[PATH_MAX], msg[PATH_MAX + 32];
+   char msg[PATH_MAX + 32];
+   const struct template *tmpls;
+   size_t cnt;
 
-   for (size_t i = 0; i < FULL_FIXTURES_SZ; i++)
+   tmpls = templates_get(&cnt);
+   for (size_t i = 0; i < cnt; i++)
     {
-      const struct full_fixture *fx = &FULL_FIXTURES[i];
+      const struct template *tmpl = &tmpls[i];
       struct bptr *bptr;
-
-      templates_path(path, sizeof path, TEMPLATES_DEFAULT_DIR, fx->lay_cnt,
-                     fx->st, fx->interval);
-      snprintf(msg, sizeof msg, "failed to load %s", path);
-      /* loader cache only: the verifier reloads nodes as it walks the image */
-      bptr = bptr_load(path, 256, &cmp_i64);
-      TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
 
       /* name the template under check: `temp_full_verify' asserts with fixed
        * messages, so this line is what tells which image carried a defect */
-      printf("  template %s\n", path);
-      temp_full_verify(bptr, fx->lay_cnt, fx->st, fx->interval, 0, 0, 0);
+      printf("  template %s\n", tmpl->path);
+      snprintf(msg, sizeof msg, "failed to load %s", tmpl->path);
+      /* loader cache only: the verifier reloads nodes as it walks the image */
+      bptr = bptr_load(tmpl->path, 256, &cmp_i64);
+      TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
+
+      temp_full_verify(bptr, tmpl->lay_cnt, tmpl->st, tmpl->interval, 0, 0, 0);
       TEST_ASSERT_EQUAL(BPTR_E_SUCCESS, bptr_unload(bptr));
     }
 }
