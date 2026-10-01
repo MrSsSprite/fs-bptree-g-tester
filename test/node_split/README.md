@@ -73,11 +73,12 @@ phase ends with its verdict:
 
 A redirected stdout is read as a log, so it never sees the live line -- it gets
 the verdict lines alone (13 lines for a directory holding the level-1 template,
-23 for the three of `bin/temp_gen`'s easy layouts).  A line wider than the
+23 for the three of `bin/temp_gen`'s easy layouts).  A live line wider than the
 terminal is clipped from the left behind a `...`, which keeps the instance name,
-the key and the position visible.  When a phase fails, the turn that failed is
-finished off before the assertion reports it, so a log still says which position
-died:
+the key and the position in view; the verdict lines are never clipped, so a very
+narrow terminal wraps them rather than losing the phase they name.  When a phase
+fails, the turn that failed is finished off before the assertion reports it, so
+a log still says which position died:
 
 ```
     verify bptr_files/temp/split/2-784.bptr: key 3123
