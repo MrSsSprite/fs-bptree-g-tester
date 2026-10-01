@@ -5,6 +5,7 @@
 #include "unity.h"
 #include "unity_internals.h"
 #include "templates.h"
+#include "tools.h"
 #include "temp_full.h"
 #include "temp_split.h"
 #include "bptree.h"
@@ -24,25 +25,25 @@ void test_temp(void);
  *
  * A tester utility rather than a case of its own: `main' runs it directly,
  * before `UNITY_BEGIN', and stops the run when it fails.  It reports through
- * its return value -- named by `temp_full_strerror' -- instead of through a
- * Unity assertion, which would need an abort frame that does not exist outside
- * a case.
+ * its return value instead of through a Unity assertion, which would need an
+ * abort frame that does not exist outside a case; the work itself is delegated
+ * to `bin/temp_gen', one run per entry of `FULL_FIXTURES'.
  *
- * @return  TEMP_FULL_OK when every template exists; the status of the first
- *          generation that failed otherwise
+ * @return  0 when every template exists; the status of the first `temp_gen' that
+ *          failed otherwise
  */
 static int gen_full_fixtures(void)
 {
    for (size_t i = 0; i < FULL_FIXTURES_SZ; i++)
     {
       const struct full_fixture *fx = &FULL_FIXTURES[i];
-      int status = temp_full_generate(fx->lay_cnt, fx->st, fx->interval,
-                                      fx->is_lite, fx->node_size);
+      int status = tools_generate(TEMPLATES_DEFAULT_DIR, fx->lay_cnt, fx->st,
+                                  fx->interval, fx->is_lite, fx->node_size);
 
-      if (status != TEMP_FULL_OK) return status;
+      if (status != 0) return status;
     }
 
-   return TEMP_FULL_OK;
+   return 0;
 }
 /*--------------------------- Fixture Utility END ----------------------------*/
 
@@ -57,10 +58,12 @@ int main(void)
     * them here, and stop the run when they cannot be built rather than let a
     * case discover a missing image */
    status = gen_full_fixtures();
-   if (status != TEMP_FULL_OK)
+   if (status != 0)
     {
-      fprintf(stderr, "node_split: cannot generate the fixtures: %s\n",
-              temp_full_strerror(status));
+      char msg[PATH_MAX + 128];
+
+      tools_strstatus(msg, sizeof msg, TOOLS_TEMP_GEN, status);
+      fprintf(stderr, "node_split: cannot generate the fixtures: %s\n", msg);
       return EXIT_FAILURE;
     }
 
