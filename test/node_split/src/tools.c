@@ -53,35 +53,6 @@ int tools_run(char *const argv[])
 }
 
 
-int tools_generate(const char *dir, unsigned int lay_cnt, int64_t st,
-                   int64_t interval, _Bool is_lite, uint32_t node_size)
-{
-   char lay[16], first[32], step[32], size[16];
-   char *argv[11];
-   size_t n = 0;
-
-   snprintf(lay, sizeof lay, "%u", lay_cnt);
-   snprintf(first, sizeof first, "%" PRIi64, st);
-   snprintf(step, sizeof step, "%" PRIi64, interval);
-   snprintf(size, sizeof size, "%u", node_size);
-
-   argv[n++] = (char *)TOOLS_TEMP_GEN;
-   argv[n++] = (char *)"--dir";
-   argv[n++] = (char *)dir;
-   if (!is_lite) argv[n++] = (char *)"--norm";
-   /* the layout is spelled out rather than left to the tool's defaults: the
-    * table is what the templates of this unit are, the tool only builds them */
-   argv[n++] = (char *)"--node-size";
-   argv[n++] = size;
-   argv[n++] = lay;
-   argv[n++] = first;
-   argv[n++] = step;
-   argv[n] = NULL;
-
-   return tools_run(argv);
-}
-
-
 int tools_instantiate(const char *src, const char *dst)
 {
    char *argv[4];

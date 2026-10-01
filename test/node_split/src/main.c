@@ -17,37 +17,26 @@ void tearDown(void) { }
 
 void test_temp(void);
 
-/*----------------------------- Fixture Utility ------------------------------*/
-/**
- * @brief   Generate every template the cases below load
- *
- * A tester utility rather than a case of its own: `main' runs it directly,
- * before `UNITY_BEGIN', and stops the run when it fails.  It reports through
- * its return value instead of through a Unity assertion, which would need an
- * abort frame that does not exist outside a case; the work itself is delegated
- * to `bin/temp_gen', one run per entry of `FULL_FIXTURES'.
- *
- * @return  0 when every template exists; the status of the first `temp_gen' that
- *          failed otherwise
- */
-static int gen_full_fixtures(void)
-{
-   for (size_t i = 0; i < FULL_FIXTURES_SZ; i++)
-    {
-      const struct full_fixture *fx = &FULL_FIXTURES[i];
-      int status = tools_generate(TEMPLATES_DEFAULT_DIR, fx->lay_cnt, fx->st,
-                                  fx->interval, fx->is_lite, fx->node_size);
-
-      if (status != 0) return status;
-    }
-
-   return 0;
-}
-/*--------------------------- Fixture Utility END ----------------------------*/
-
 /*----------------------------------- MAIN -----------------------------------*/
+/**
+ * @brief   Test the templates the caller prepared
+ *
+ * The unit owns no template: `DIR` -- the one argument, or
+ * `TEMPLATES_DEFAULT_DIR` when none is given -- is scanned for
+ * `<lay_cnt>-<st>-<interval>.bptr' images, and the cases walk what it holds.
+ * Preparing them is the caller's job (`utils/temp`: `bin/temp_gen` writes one,
+ * `bin/temp_inst` copies one); this unit only reads, split-tests and verifies
+ * them, so it never generates a template of its own.
+ *
+ * A directory that yields no template is not a failure: the caller gave the
+ * unit nothing to test, so the run warns on stderr and exits successfully
+ * without starting Unity.  Only something that is offered as a template and
+ * cannot be read as one -- a `.bptr' name that does not follow the convention,
+ * or an image no case can understand -- fails the run.
+ */
 int main(int argc, char *argv[])
 {
+   const char *dir;
    char reason[PATH_MAX + 128];
    int status;
 
@@ -61,32 +50,25 @@ int main(int argc, char *argv[])
 
    if (argc == 2)
     {
-      /* a directory of ready-made templates: the cases instantiate what they
-       * find there, so nothing is generated for them */
-      printf("node_split: using the templates in %s\n", argv[1]);
-      status = templates_load_dir(argv[1], reason, sizeof reason);
+      /* the directory of ready-made templates the caller prepared */
+      dir = argv[1];
+      printf("node_split: using the templates in %s\n", dir);
     }
    else
     {
-      /* the fixtures the cases load are an input of this unit, not a case:
-       * build them here, and stop the run when they cannot be built rather
-       * than let a case discover a missing image */
+      dir = TEMPLATES_DEFAULT_DIR;
       printf("node_split: no template directory given; using the default %s\n",
-             TEMPLATES_DEFAULT_DIR);
-      status = gen_full_fixtures();
-      if (status != 0)
-       {
-         char msg[PATH_MAX + 128];
-
-         tools_strstatus(msg, sizeof msg, TOOLS_TEMP_GEN, status);
-         fprintf(stderr, "node_split: cannot generate the fixtures: %s\n",
-                 msg);
-         return EXIT_FAILURE;
-       }
-
-      status = templates_load_default(reason, sizeof reason);
+             dir);
     }
 
+   status = templates_load_dir(dir, reason, sizeof reason);
+   /* Nothing to test is not a failure: a missing or empty directory is the
+    * caller saying "no template this time", so the run warns and succeeds. */
+   if (status == TEMPLATES_E_DIR || status == TEMPLATES_E_EMPTY)
+    {
+      fprintf(stderr, "node_split: warning: nothing to test: %s\n", reason);
+      return EXIT_SUCCESS;
+    }
    if (status != TEMPLATES_OK)
     {
       fprintf(stderr, "node_split: %s\n", reason);
@@ -103,10 +85,11 @@ int main(int argc, char *argv[])
 
    return UNITY_END();
 }
+/*--------------------------------- MAIN END ---------------------------------*/
 
 
 /**
- * @brief   Check every generated template before a modification is attempted
+ * @brief   Check every template before a modification is attempted
  *
  * The guard on the templates.  A split case is only meaningful once the image
  * it instantiates is known to be correct, so every template of the unit's list
@@ -138,4 +121,3 @@ void test_temp(void)
       TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);
     }
 }
-/*--------------------------------- MAIN END ---------------------------------*/

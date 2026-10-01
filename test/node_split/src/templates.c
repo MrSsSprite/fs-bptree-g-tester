@@ -11,8 +11,8 @@
 
 
 /*------------------------------ Private Defines ------------------------------*/
-/* How `_parse_name' reads a file name; `templates_parse' maps both failures
- * onto TEMPLATES_E_NAME, the loader names them apart. */
+/* How `_parse_name' reads a file name; `templates_load_dir' names the two
+ * failures apart in the reason it hands back. */
 #define _NAME_OK      (0)
 #define _NAME_BAD     (-1)  /* not `<lay_cnt>-<st>-<interval>.bptr' */
 #define _NAME_LAY_CNT (-2)  /* the convention, but with lay_cnt 0 */
@@ -29,18 +29,6 @@ static void _set_list(struct template *list, size_t cnt);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
-/*----------------------------- Public Variables -----------------------------*/
-const struct full_fixture FULL_FIXTURES[] =
-{
-   { 1, 0, 0x10, 1, 512 },
-   { 2, 0, 0x10, 1, 512 },
-   { 3, 0, 0x10, 1, 512 },
-};
-
-const size_t FULL_FIXTURES_SZ = sizeof FULL_FIXTURES / sizeof FULL_FIXTURES[0];
-/*---------------------------- Public Variable END ---------------------------*/
-
-
 /*---------------------------- Private Variables -----------------------------*/
 /* the templates the cases walk, owned by this module */
 static struct template *templates_list;
@@ -49,37 +37,6 @@ static size_t templates_cnt;
 
 
 /*----------------------------- Public Functions -----------------------------*/
-int templates_path(char *buf, size_t size, const char *dir,
-                   unsigned int lay_cnt, int64_t st, int64_t interval)
-{
-   size_t len = strlen(dir);
-   const char *sep = (len > 0 && dir[len - 1] == '/') ? "" : "/";
-
-   return snprintf(buf, size, "%s%s%u-%" PRIi64 "-%" PRIi64 ".bptr",
-                   dir, sep, lay_cnt, st, interval);
-}
-
-
-int templates_parse(const char *name, struct template *out)
-{
-   unsigned int lay_cnt;
-   int64_t st, interval;
-   int status = _parse_name(name, &lay_cnt, &st, &interval);
-
-   if (status != _NAME_OK) return TEMPLATES_E_NAME;
-
-   if (out != NULL)
-    {
-      out->lay_cnt = lay_cnt;
-      out->st = st;
-      out->interval = interval;
-      snprintf(out->path, sizeof out->path, "%s", name);
-    }
-
-   return TEMPLATES_OK;
-}
-
-
 int templates_load_dir(const char *dir, char *reason, size_t size)
 {
    struct template *list = NULL;
@@ -179,43 +136,6 @@ int templates_load_dir(const char *dir, char *reason, size_t size)
 }
 
 
-int templates_load_default(char *reason, size_t size)
-{
-   struct template *list;
-   size_t i;
-
-   _reason(reason, size, "%s", "");
-
-   if (FULL_FIXTURES_SZ == 0)
-    {
-      _reason(reason, size, "the fixture table is empty");
-      return TEMPLATES_E_EMPTY;
-    }
-
-   list = calloc(FULL_FIXTURES_SZ, sizeof *list);
-   if (list == NULL)
-    {
-      _reason(reason, size, "out of memory");
-      return TEMPLATES_E_ALLOC;
-    }
-
-   for (i = 0; i < FULL_FIXTURES_SZ; i++)
-    {
-      const struct full_fixture *fx = &FULL_FIXTURES[i];
-
-      list[i].lay_cnt = fx->lay_cnt;
-      list[i].st = fx->st;
-      list[i].interval = fx->interval;
-      templates_path(list[i].path, sizeof list[i].path, TEMPLATES_DEFAULT_DIR,
-                     fx->lay_cnt, fx->st, fx->interval);
-    }
-
-   _set_list(list, FULL_FIXTURES_SZ);
-
-   return TEMPLATES_OK;
-}
-
-
 const struct template *templates_get(size_t *cnt)
 {
    if (cnt != NULL) *cnt = templates_cnt;
@@ -258,10 +178,10 @@ static int _join(char *buf, size_t size, const char *dir, const char *name)
 /**
  * @brief   Read `<lay_cnt>-<st>-<interval>.bptr' into its three numbers
  *
- * The name is accepted only in the spelling `templates_path' produces: the
- * parse is followed by a format back into the same buffer and a comparison, so
- * a name that merely parses (`01-0-16.bptr', `+1-0-16.bptr') is a stranger, not
- * a second spelling of a file the unit already knows.
+ * The name is accepted only in the spelling `bin/temp_gen' writes: the parse is
+ * followed by a format back into the same buffer and a comparison, so a name
+ * that merely parses (`01-0-16.bptr', `+1-0-16.bptr') is a stranger, not a
+ * second spelling of an image the caller prepared.
  *
  * @param[in]  name      file name of a template
  * @param[out] lay_cnt   number of levels
