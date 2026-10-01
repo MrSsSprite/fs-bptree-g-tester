@@ -14,50 +14,63 @@ declaration of the function).
 ## Running it
 
 From the repository root, because the tests and the tools use paths relative to
-it:
+it.  The unit tests the templates it is **given** and never prepares one: the
+caller writes them first -- `bin/temp_gen` is the tool for that.
 
 ```sh
-make clean && make      # `make node_split' for this unit alone
+make clean && make                 # `make node_split' for this unit alone
 find bptr_files -name '*.bptr' -delete
-./bin/node_split                        # templates generated in the default dir
-./bin/node_split /tmp/node_split_tpls   # templates taken from a directory
+
+# prepare the templates to test, one per shape, then hand the directory over
+./bin/temp_gen --dir bptr_files/temp/full 1 0 16
+./bin/temp_gen --dir bptr_files/temp/full 2 0 16
+./bin/temp_gen --dir bptr_files/temp/full 3 0 16
+./bin/node_split                        # default directory, named below
+./bin/node_split /tmp/node_split_tpls   # or any directory the caller prepared
 ```
 
 With no argument the unit prints
-`node_split: no template directory given; using the default bptr_files/temp/full/`,
-generates one template per `FULL_FIXTURES` entry there with `bin/temp_gen`, and
-only then starts Unity.  With one argument it prints
-`node_split: using the templates in <DIR>` and scans `<DIR>/*.bptr` instead; it
-generates nothing.  More than one argument is a usage error.
+`node_split: no template directory given; using the default bptr_files/temp/full/`;
+with one argument it prints `node_split: using the templates in <DIR>`.  Either
+way it scans that directory for `*.bptr` entries and runs the cases on what it
+finds; it generates nothing.  More than one argument is a usage error.
 
-A template is `<DIR>/<lay_cnt>-<st>-<interval>.bptr`, exactly as
-`templates_path()` writes it.  In directory mode a missing, unreadable or empty
-directory, or a `.bptr` name that does not follow the convention (or whose
-`lay_cnt` is 0), stops the run before Unity with `EXIT_FAILURE` and the reason
-on stderr; entries that are not `.bptr` at all are ignored.
+A template is `<DIR>/<lay_cnt>-<st>-<interval>.bptr`, the name `bin/temp_gen`
+writes.  A `.bptr` entry that does not follow that convention (or whose
+`lay_cnt` is 0) stops the run with `EXIT_FAILURE` and the reason on stderr;
+entries that are not `.bptr` at all are ignored.
+
+**Nothing to test is a warning, not a failure.**  A directory that holds no
+template -- because it is empty, missing or unreadable -- makes the unit print
+`node_split: warning: nothing to test: <reason>` on stderr and exit
+successfully without starting Unity.  The templates are the caller's input, so
+no input means no case to run; prepare them with `bin/temp_gen` when the run is
+expected to test something.
 
 Exit code is the number of failed Unity assertions (`UNITY_END()`), `0` when
 everything passed; a template or tool problem found before the cases is
-`EXIT_FAILURE` (`1`).  The unit currently reports **2 cases, 0 failures**: the
-template guard and the split case.  The guard is the first case, but Unity
-continues after a failed case: a template the guard rejects also fails the split
-case, and the run's exit code is the verdict -- a defect is never a false pass.
+`EXIT_FAILURE` (`1`).  A run over prepared templates reports **2 cases, 0
+failures**: the template guard and the split case.  The guard is the first case,
+but Unity continues after a failed case: a template the guard rejects also fails
+the split case, and the run's exit code is the verdict -- a defect is never a
+false pass.
 
 The tools print their own progress on stdout, so a run interleaves their lines
 with the unit's; the unit's summary is the last `N Tests ...` block.
 
 ## The tools
 
-The template work lives in `utils/temp` and is reached as three stand-alone
-programs.  The unit spawns them by `posix_spawn`/`waitpid` (`src/tools.{h,c}`),
+The template work lives in `utils/temp` and is reached as stand-alone programs.
+The unit spawns the two it needs by `posix_spawn`/`waitpid` (`src/tools.{h,c}`),
 relative to the working directory -- there is no `PATH` search and no template
-code in this directory any more.
+code in this directory any more.  `bin/temp_gen` is not among them: preparing a
+template is the caller's step, so the unit holds no handle on the generator.
 
 | Tool | Call | Exit status |
 | --- | --- | --- |
-| `bin/temp_gen` | `[--dir DIR] [--norm] [--node-size N] LAY_CNT ST INTERVAL` | 0 written, 1 not built (reason on stderr), 2 usage |
-| `bin/temp_inst` | `SRC DST` | 0 copied, 1 `DST` exists (untouched), 2 usage, 3 copy error |
-| `bin/temp_verify` | `[--lay-cnt N] [--st S] [--interval I] [--key K --val V] TEMPLATE...` | 0 verified, 1 check failed (Unity output on stdout), 2 usage, 3 load failure |
+| `bin/temp_gen` | caller's tool: `[--dir DIR] [--norm] [--node-size N] LAY_CNT ST INTERVAL` | 0 written, 1 not built (reason on stderr), 2 usage |
+| `bin/temp_inst` | `SRC DST` (spawned by the unit) | 0 copied, 1 `DST` exists (untouched), 2 usage, 3 copy error |
+| `bin/temp_verify` | `[--lay-cnt N] [--st S] [--interval I] [--key K --val V] TEMPLATE...` (spawned by the unit) | 0 verified, 1 check failed (Unity output on stdout), 2 usage, 3 load failure |
 
 `temp_inst` creates the parent directories of `DST`.  `temp_verify` reads the
 layout from the template name when it is not given; the unit always passes
@@ -66,15 +79,8 @@ after the position they were split at, and passes `--key`/`--val` for an
 instance that carries the inserted record.
 
 A tool that cannot be started is reported as
-`cannot run bin/temp_gen: <errno> (build the tools with 'make')`; a killed child
+`cannot run bin/temp_inst: <errno> (build the tools with 'make')`; a killed child
 as `128 + signal`, and any other failure as `bin/temp_*: exited with status N`.
-
-The tools are a separate change (`utils/temp`) and `bin/` is gitignored build
-output, so before the two are merged, borrow the built tools:
-
-```sh
-cp ../vibe/bin/temp_gen ../vibe/bin/temp_inst ../vibe/bin/temp_verify bin/
-```
 
 ## Windows
 
@@ -84,20 +90,20 @@ cp ../vibe/bin/temp_gen ../vibe/bin/temp_inst ../vibe/bin/temp_verify bin/
 | 2 | 1065 (every one) | leaf split + full root split, every leaf and every insertion position in the root |
 | 3 | 77 (sampled) | leaf split + two cascaded branch splits, each level in each of its insertion cases |
 
-`FULL_FIXTURES` (`src/templates.h`) is the one table the whole unit walks in
-default mode: `gen_full_fixtures()` (in `main`) generates one template per entry
-and `test_temp` verifies one per entry first; the directory mode replaces that
-table with the scanned list (`templates_get()`), for the cases only.  Generating
-from `main` keeps a template failure out of the Unity cases: it stops the run
-before `UNITY_BEGIN()`.
+The list the cases walk is the one `templates_load_dir()` built from the
+directory the caller named (or `TEMPLATES_DEFAULT_DIR`): one entry per
+`<lay_cnt>-<st>-<interval>.bptr` image found there, sorted by shape so that a
+run is reproducible.  What the caller prepared is therefore what the unit
+covers, and `test_temp` verifies every one of them before the split case
+modifies a copy.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `src/main.c` | `main`, the default-directory generation and the `test_temp` guard case |
-| `src/templates.{h,c}` | the fixture table, `struct template`, the name convention, the directory scan and `cmp_i64` |
-| `src/tools.{h,c}` | the `posix_spawn` runner and the three tool wrappers |
+| `src/main.c` | `main` (the directory argument, the notices and the empty-path warning) and the `test_temp` guard case |
+| `src/templates.{h,c}` | `struct template`, the name convention, the directory scan and `cmp_i64` |
+| `src/tools.{h,c}` | the `posix_spawn` runner and the `temp_inst`/`temp_verify` wrappers |
 | `src/temp_split.{h,c}` | the `test_full_split` case: where to insert, how to get there |
 | `src/bptr_static.h` | declaration of the `BPTR_STATIC` internals the unit calls |
 
@@ -173,3 +179,5 @@ distributed the keys differently would still be a valid tree).
   the tree unchanged, which no case asserts.
 - A template taller than 3 levels or with `interval / 2 == 0` is only guarded,
   not split; the notice names it, so the gap is visible in the run.
+- The unit tests only what it is handed: a shape the caller does not prepare is
+  not covered by the run, and an empty directory passes with a warning.
