@@ -39,7 +39,9 @@ on stderr; entries that are not `.bptr` at all are ignored.
 Exit code is the number of failed Unity assertions (`UNITY_END()`), `0` when
 everything passed; a template or tool problem found before the cases is
 `EXIT_FAILURE` (`1`).  The unit currently reports **2 cases, 0 failures**: the
-template guard and the split case.
+template guard and the split case.  The guard is the first case, but Unity
+continues after a failed case: a template the guard rejects also fails the split
+case, and the run's exit code is the verdict -- a defect is never a false pass.
 
 The tools print their own progress on stdout, so a run interleaves their lines
 with the unit's; the unit's summary is the last `N Tests ...` block.
@@ -84,10 +86,10 @@ cp ../vibe/bin/temp_gen ../vibe/bin/temp_inst ../vibe/bin/temp_verify bin/
 
 `FULL_FIXTURES` (`src/templates.h`) is the one table the whole unit walks in
 default mode: `gen_full_fixtures()` (in `main`) generates one template per entry
-and `test_temp` verifies one per entry before anything is modified; the
-directory mode replaces that table with the scanned list (`templates_get()`),
-for the cases only.  Generating from `main` keeps a template failure out of the
-Unity cases: it stops the run before `UNITY_BEGIN()`.
+and `test_temp` verifies one per entry first; the directory mode replaces that
+table with the scanned list (`templates_get()`), for the cases only.  Generating
+from `main` keeps a template failure out of the Unity cases: it stops the run
+before `UNITY_BEGIN()`.
 
 ## Files
 
