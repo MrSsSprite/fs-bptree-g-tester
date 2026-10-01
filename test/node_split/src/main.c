@@ -4,6 +4,7 @@
 #include <limits.h>
 #include "unity.h"
 #include "unity_internals.h"
+#include "templates.h"
 #include "temp_full.h"
 #include "temp_split.h"
 #include "bptree.h"
@@ -101,7 +102,8 @@ void test_temp(void)
       const struct full_fixture *fx = &FULL_FIXTURES[i];
       struct bptr *bptr;
 
-      temp_full_path(path, sizeof path, fx->lay_cnt, fx->st, fx->interval);
+      templates_path(path, sizeof path, TEMPLATES_DEFAULT_DIR, fx->lay_cnt,
+                     fx->st, fx->interval);
       snprintf(msg, sizeof msg, "failed to load %s", path);
       /* loader cache only: the verifier reloads nodes as it walks the image */
       bptr = bptr_load(path, 256, &cmp_i64);

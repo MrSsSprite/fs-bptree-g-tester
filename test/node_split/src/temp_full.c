@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "temp_full.h"
+#include "templates.h"
 #include "bptr_internal.h"
 #include "bptree.h"
 #include "bptr_node.h"
@@ -16,9 +17,6 @@
 
 
 /*------------------------------ Private Macros ------------------------------*/
-/* directory the fixtures live in, relative to the working directory */
-#define FULL_GEN_DIR "bptr_files/temp/full/"
-
 /* node cache capacity of the generated tree: one node stays pinned per level
  * while its subtree is filled, plus one spare slot for the level list sibling
  * fetched while a node is appended, so a taller tree cannot be generated */
@@ -59,31 +57,11 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
 /*------------------------- Forward Declarations END -------------------------*/
 
 
-/*----------------------------- Public Variables -----------------------------*/
-const struct full_fixture FULL_FIXTURES[] =
-{
-   { 1, 0, 0x10, 1, 512 },
-   { 2, 0, 0x10, 1, 512 },
-   { 3, 0, 0x10, 1, 512 },
-};
-
-const size_t FULL_FIXTURES_SZ = sizeof FULL_FIXTURES / sizeof FULL_FIXTURES[0];
-/*---------------------------- Public Variable END ---------------------------*/
-
-
 /*----------------------------- Public Functions -----------------------------*/
-int temp_full_path(char *buf, size_t size, unsigned int lay_cnt, int64_t st,
-                   int64_t interval)
-{
-   return snprintf(buf, size, FULL_GEN_DIR "%u-%" PRIi64 "-%" PRIi64 ".bptr",
-                   lay_cnt, st, interval);
-}
-
-
 /**
  * @brief   Build a perfectly full tree of @p lay_cnt levels and write it to
- *          `bptr_files/temp/full/<lay_cnt>-<st>-<interval>.bptr' (the name is
- *          built by `temp_full_path')
+ *          `<TEMPLATES_DEFAULT_DIR><lay_cnt>-<st>-<interval>.bptr' (the name is
+ *          built by `templates_path')
  *
  * Keys start at @p st and step by @p interval; each value is the key times
  * two.  Every leaf holds `leaf.up - 1' keys, every internal node holds
@@ -148,7 +126,8 @@ int temp_full_generate(unsigned int lay_cnt, int64_t st, int64_t interval,
                    2 * ((uint32_t)sizeof (int64_t) + ptr_size))
       return _gen_fail(TEMP_FULL_E_NODE_SIZE, NULL);
 
-   temp_full_path(path, sizeof path, lay_cnt, st, interval);
+   templates_path(path, sizeof path, TEMPLATES_DEFAULT_DIR, lay_cnt, st,
+                  interval);
    if (ensure_par_dirs(path, 0755) == -1)
       return _gen_fail(TEMP_FULL_E_DIR, path);
 
@@ -521,13 +500,6 @@ static long long ensure_par_dirs(char *path, mode_t mode)
     }
 
    return cnt;
-}
-
-
-int cmp_i64(const void *lhs, const void *rhs)
-{
-   int64_t diff = *(const int64_t *)lhs - *(const int64_t *)rhs;
-   return diff < 0 ? -1 : diff > 0 ? 1 : 0;
 }
 
 

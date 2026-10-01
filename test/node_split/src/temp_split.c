@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "temp_split.h"
+#include "templates.h"
 #include "temp_full.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
@@ -253,7 +254,8 @@ void test_full_split(void)
          3u, fx->lay_cnt, "no split positions for a template that tall");
 
       /*----------------- the template the cases are built on ----------------*/
-      temp_full_path(tmpl, sizeof tmpl, fx->lay_cnt, fx->st, fx->interval);
+      templates_path(tmpl, sizeof tmpl, TEMPLATES_DEFAULT_DIR, fx->lay_cnt,
+                     fx->st, fx->interval);
       printf("  template %s\n", tmpl);
       snprintf(msg, sizeof msg, "failed to load the template %s", tmpl);
       bptr = bptr_load(tmpl, SPLIT_CACHE_CAP, &cmp_i64);
