@@ -6,9 +6,7 @@
 #include "unity_internals.h"
 #include "templates.h"
 #include "tools.h"
-#include "temp_full.h"
 #include "temp_split.h"
-#include "bptree.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
 /*------------------------------- Unity Setup --------------------------------*/
@@ -111,22 +109,14 @@ int main(int argc, char *argv[])
  * @brief   Check every generated template before a modification is attempted
  *
  * The guard on the templates.  A split case is only meaningful once the image
- * it instantiates is known to be correct, so each template of the unit's list
- * is loaded and walked by `temp_full_verify' here, ahead of the cases that will
- * modify one.  A defect aborts the case -- and with it the run -- before
- * anything is instantiated.
- *
- * @note  Loading and unloading an image rewrites its header block: the library
- *        flushes that whole block from the shared scratch buffer it marshals
- *        nodes through, so the bytes past the header end up holding whatever
- *        node image was left there -- they change as soon as that leftover
- *        differs, though a load that fetches no node leaves the file alone.
- *        The header itself and every node block are stable; a fixture must not
- *        be pinned by the hash of the whole file.
+ * it instantiates is known to be correct, so every template of the unit's list
+ * is handed to `bin/temp_verify' here, ahead of the cases that will modify one.
+ * A defect aborts the case -- and with it the run -- before anything is
+ * instantiated, and the message names the tool, the path and its status.
  */
 void test_temp(void)
 {
-   char msg[PATH_MAX + 32];
+   char msg[PATH_MAX + 160], err[PATH_MAX + 128];
    const struct template *tmpls;
    size_t cnt;
 
@@ -134,18 +124,16 @@ void test_temp(void)
    for (size_t i = 0; i < cnt; i++)
     {
       const struct template *tmpl = &tmpls[i];
-      struct bptr *bptr;
+      int status;
 
-      /* name the template under check: `temp_full_verify' asserts with fixed
-       * messages, so this line is what tells which image carried a defect */
+      /* name the template under check: the tool reports a defect with its own
+       * Unity output, so this line is what tells which image carried it */
       printf("  template %s\n", tmpl->path);
-      snprintf(msg, sizeof msg, "failed to load %s", tmpl->path);
-      /* loader cache only: the verifier reloads nodes as it walks the image */
-      bptr = bptr_load(tmpl->path, 256, &cmp_i64);
-      TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
-
-      temp_full_verify(bptr, tmpl->lay_cnt, tmpl->st, tmpl->interval, 0, 0, 0);
-      TEST_ASSERT_EQUAL(BPTR_E_SUCCESS, bptr_unload(bptr));
+      status = tools_verify(tmpl->lay_cnt, tmpl->st, tmpl->interval, 0, 0, 0,
+                            tmpl->path);
+      tools_strstatus(err, sizeof err, TOOLS_TEMP_VERIFY, status);
+      snprintf(msg, sizeof msg, "failed to verify %s: %s", tmpl->path, err);
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);
     }
 }
 /*--------------------------------- MAIN END ---------------------------------*/

@@ -1,6 +1,7 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "temp_split.h"
 #include "templates.h"
+#include "tools.h"
 #include "temp_full.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
@@ -238,7 +239,8 @@ static struct bptr_node *split_descend(struct bptr *self, int64_t key)
 /*-------------------------------- Test Units --------------------------------*/
 void test_full_split(void)
 {
-   char inst[PATH_MAX], path[PATH_MAX], msg[PATH_MAX + 64];
+   char inst[PATH_MAX], path[PATH_MAX], msg[PATH_MAX + 160];
+   char err[PATH_MAX + 128];
    const struct template *tmpls;
    size_t tmpl_cnt;
 
@@ -344,33 +346,36 @@ void test_full_split(void)
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->next, sibling, msg);
          bptr_node_unload(bptr, node);
 
-         /* every node of the template is full, so the split reached the root
-          * and the tree has one level more than the template */
-         temp_full_verify(bptr, tmpl->lay_cnt, st, interval, 1, k, v);
+         /* flush and close the instance; what the split left behind is checked
+          * on the file in the second loop, once no instance of this template is
+          * open any more */
          snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
          TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
        }
 
-      /*------------- and check every one of them from the file -------------*/
+      /*------- and let the tool check every one of them from the file -------*/
       for (size_t gap_i = 0; gap_i < gap_cnt; gap_i++)
        {
          unsigned int gap = split_gap_at(&lay, gap_i);
          int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
+         int status;
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
                   tmpl->lay_cnt, gap_i);
          _bptr_path(path, sizeof path, inst);
-         printf("    reload %s: key %" PRIi64 "\n", path, k);
-
-         snprintf(msg, sizeof msg, "failed to reload the instance %s", path);
-         bptr = bptr_load(path, SPLIT_CACHE_CAP, &cmp_i64);
-         TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
+         printf("    verify %s: key %" PRIi64 "\n", path, k);
 
          /* the split has to be in the file, not just in the cache it was
-          * written through */
-         temp_full_verify(bptr, tmpl->lay_cnt, st, interval, 1, k, v);
-         snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
-         TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
+          * written through.  Every instance of this template is flushed and
+          * closed by now -- the first loop is over -- so the tool reads the
+          * image from a clean file, and the whole tree, not just the nodes the
+          * split touched, is checked against the shape of the template. */
+         status = tools_verify(tmpl->lay_cnt, st, interval, 1, k, v, path);
+         tools_strstatus(err, sizeof err, TOOLS_TEMP_VERIFY, status);
+         snprintf(msg, sizeof msg, "failed to verify the instance %s: %s",
+                  path, err);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);
+
          TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path),
                                        "failed to remove the instance");
        }
