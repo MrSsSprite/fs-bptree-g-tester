@@ -137,6 +137,13 @@ by nothing.  `--key`/`--val` (both or neither) tell the checker that one record
 was inserted -- how a split instance is checked: it then expects `lay_cnt + 1`
 levels and tolerates exactly that one record.
 
+The name is read as three decimal numbers, so a spelling the generator would
+never write -- `01-0-16.bptr` -- is accepted as well.  A caller that needs the
+canonical `<lay_cnt>-<st>-<interval>.bptr` name (the split unit's directory
+loader is one) should pass the layout explicitly with
+`--lay-cnt`/`--st`/`--interval` instead.  A name that does not conform ends the
+run there, so the templates listed after it are not checked at all.
+
 ```
 temp_verify: <path>: ok
 ```
@@ -147,11 +154,13 @@ one line per template, printed only after that template's Unity case passed.
 | --- | --- |
 | 0 | every template verified |
 | 1 | at least one check failed (Unity output on stdout) |
-| 2 | the command line cannot be served, or a name does not conform |
-| 3 | a template cannot be loaded -- it was not checked, and `bptr_errno` is printed |
+| 2 | the command line cannot be served, or a name does not conform -- the rest of the list is not checked |
+| 3 | a template cannot be loaded -- it was not checked, and `bptr_errno` is printed; this outranks a failed check (1) in the same run |
 
 A run in which nothing could be loaded prints no Unity output at all; a run in
-which at least one template was checked ends with the usual Unity summary.
+which at least one template was checked ends with the usual Unity summary.  A
+load failure and a check failure in one run therefore exit 3, with the failed
+check still reported in the Unity output on stdout.
 
 ## Example
 
