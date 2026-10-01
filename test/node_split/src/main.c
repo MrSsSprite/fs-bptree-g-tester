@@ -111,8 +111,9 @@ void test_temp(void)
       const struct template *tmpl = &tmpls[i];
       int status;
 
-      /* name the template under check: the tool reports a defect with its own
-       * Unity output, so this line is what tells which image carried it */
+      /* name the template under check: the tool's report of a defect is
+       * replayed on stderr by `tools_run', so this line is what tells which
+       * image carried it */
       printf("  template %s\n", tmpl->path);
       status = tools_verify(tmpl->lay_cnt, tmpl->st, tmpl->interval, 0, 0, 0,
                             tmpl->path);
