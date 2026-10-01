@@ -2,7 +2,6 @@
 #include "temp_split.h"
 #include "templates.h"
 #include "tools.h"
-#include "temp_full.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
 #include "bptr_static.h"
@@ -308,6 +307,7 @@ void test_full_split(void)
        {
          unsigned int gap = split_gap_at(&lay, gap_i);
          int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
+         int status;
          bptr_node_t sibling;
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
@@ -319,10 +319,11 @@ void test_full_split(void)
          /* a run that a failing case aborted leaves instances behind, and the
           * copy refuses to overwrite a file that already exists */
          remove(path);
-         snprintf(msg, sizeof msg, "failed to instantiate %s from %s",
-                  path, tmpl->path);
-         TEST_ASSERT_EQUAL_INT_MESSAGE(0, temp_instantiate(inst, tmpl->path),
-                                       msg);
+         status = tools_instantiate(tmpl->path, path);
+         tools_strstatus(err, sizeof err, TOOLS_TEMP_INST, status);
+         snprintf(msg, sizeof msg, "failed to instantiate %s from %s: %s",
+                  path, tmpl->path, err);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);
 
          snprintf(msg, sizeof msg, "failed to load the instance %s", path);
          bptr = bptr_load(path, SPLIT_CACHE_CAP, &cmp_i64);
