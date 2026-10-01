@@ -18,6 +18,10 @@
  *        `progress_break', or it is written where the line is: the terminal
  *        cursor is left at the end of it.  The tools' runner does that for the
  *        report it replays.
+ * @note  Whether stdout is a terminal is decided once, by the first call of the
+ *        module; a caller that reopens stdout later keeps that answer.  A line
+ *        wider than the terminal is clipped, and one longer than the room the
+ *        module renders in is cut short.
  */
 void progress_update(const char *fmt, ...);
 /**
@@ -27,6 +31,8 @@ void progress_update(const char *fmt, ...);
  *
  * @note  The last update of a loop that is through is dropped: the verdict says
  *        what the loop did, the per-item line would only repeat its last turn.
+ *        A verdict is never clipped -- it is printed once, and a narrow terminal
+ *        wrapping it is better than a `...' that drops the phase it names.
  */
 void progress_done(const char *fmt, ...);
 /**

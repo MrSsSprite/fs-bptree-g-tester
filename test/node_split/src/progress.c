@@ -10,9 +10,11 @@
 
 
 /*------------------------------ Private Defines -----------------------------*/
-/* Room a line is rendered in, and the longest one that is ever drawn: a line
- * wider than the terminal is clipped (see `_prog_render') */
-#define PROG_TEXT_MAX 512
+/* Room a line is rendered in.  An item line is an instance path plus the key and
+ * the position -- under a hundred bytes, so the margin is wide -- and a line
+ * longer than this is cut by `vsnprintf', which is why the module's header says
+ * so. */
+#define PROG_TEXT_MAX 1024
 /*------------------------------ Private Defines END --------------------------*/
 
 
@@ -32,7 +34,8 @@ static int prog_tty = -1;
 /*--------------------------- Forward Declarations ---------------------------*/
 static _Bool _prog_is_tty(void);
 static size_t _prog_width(void);
-static size_t _prog_render(char *dst, size_t size, const char *fmt, va_list ap);
+static size_t _prog_render(char *dst, size_t size, const char *fmt, va_list ap,
+                           _Bool clip);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -44,7 +47,7 @@ void progress_update(const char *fmt, ...)
    va_list ap;
 
    va_start(ap, fmt);
-   len = _prog_render(line, sizeof line, fmt, ap);
+   len = _prog_render(line, sizeof line, fmt, ap, _prog_is_tty());
    va_end(ap);
 
    if (_prog_is_tty())
@@ -72,7 +75,8 @@ void progress_done(const char *fmt, ...)
    va_list ap;
 
    va_start(ap, fmt);
-   len = _prog_render(line, sizeof line, fmt, ap);
+   /* a verdict is printed once: it is never clipped, only the live line is */
+   len = _prog_render(line, sizeof line, fmt, ap, 0);
    va_end(ap);
 
    if (_prog_is_tty() && prog_open)
@@ -162,20 +166,23 @@ static size_t _prog_width(void)
 
 
 /**
- * @brief   Render one line, clipped to the width of the terminal
+ * @brief   Render one line, clipped to the width of the terminal when asked
  *
- * A line that does not fit is clipped from the left, behind a `...': what an
- * update moves -- the instance name, the key, the position -- is at its end,
- * while the head is the same for the whole loop.
+ * A clipped line loses its head, behind a `...': what an update moves -- the
+ * instance name, the key, the position -- is at its end, while the head is the
+ * same for the whole loop.  A terminal too narrow for that end cuts it too; the
+ * line is only ever shorter than what the caller formatted.
  *
  * @param[out] dst   destination, NUL terminated
  * @param[in]  size  capacity of @p dst
  * @param[in]  fmt   format to render
  * @param[in]  ap    its arguments
+ * @param[in]  clip  1 to fit the line to the terminal, 0 to keep it whole
  *
  * @return  the length written to @p dst
  */
-static size_t _prog_render(char *dst, size_t size, const char *fmt, va_list ap)
+static size_t _prog_render(char *dst, size_t size, const char *fmt, va_list ap,
+                           _Bool clip)
 {
    char full[PROG_TEXT_MAX];
    size_t len, width;
@@ -187,9 +194,9 @@ static size_t _prog_render(char *dst, size_t size, const char *fmt, va_list ap)
     }
 
    len = strlen(full);
-   /* Only a terminal has a width.  A line that goes to a log keeps its whole
-    * text, however long the path in it is. */
-   width = _prog_is_tty() ? _prog_width() : len;
+   /* Only a terminal has a width, and only the live line is bound by it: a
+    * verdict wraps at worst, where a `...' would drop the phase it names. */
+   width = clip ? _prog_width() : len;
    if (len > width)
     {
       size_t tail = width > 3 ? width - 3 : 0;
