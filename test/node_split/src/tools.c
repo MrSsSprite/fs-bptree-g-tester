@@ -86,7 +86,10 @@ int tools_run(char *const argv[])
     }
 
    /* The output is read to its end before the child is reaped: a tool that
-    * prints more than a pipe holds must never block on it. */
+    * prints more than a pipe holds must never block on it.  The end is the
+    * close of the write end by every holder of it, so a tool that left a
+    * descendant behind with the pipe still open delays the reap -- the tools
+    * do not fork. */
    buf = _capture(fds[0], &len, &dropped);
    close(fds[0]);
 
@@ -108,7 +111,7 @@ int tools_run(char *const argv[])
     }
 
    /* A tool that did its job says nothing in the log of the unit: its report is
-    * the unit's own line for it.  One that did not is quoted verbatim, so the
+    * the unit's own line for it.  One that did not is quoted on stderr, so the
     * defect it found is not thrown away with the noise around it. */
    if (rc != 0) _replay(argv[0], buf, len, dropped);
    free(buf);
