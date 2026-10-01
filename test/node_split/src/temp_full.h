@@ -28,60 +28,7 @@
 /*---------------------------- Public Defines END ----------------------------*/
 
 
-/*------------------------------ Public Structs ------------------------------*/
-/**
- * @brief   One template the unit is built on
- *
- * The shape a template is generated with.  `gen_full_fixtures' writes one image
- * per entry of `FULL_FIXTURES', `test_temp' verifies one per entry and the
- * split cases instantiate one per entry, so the three cannot drift apart: every
- * template a case may modify is a template that has been checked first.
- */
-struct full_fixture
-{
-   unsigned int lay_cnt;   /* number of levels; 1 yields a single leaf */
-   int64_t      st;        /* first key */
-   int64_t      interval;  /* distance between two successive keys */
-   _Bool        is_lite;   /* use the 4-byte child pointer layout */
-   uint32_t     node_size; /* size of a node in bytes */
-};
-/*---------------------------- Public Structs END ----------------------------*/
-
-
-/*----------------------- Public Variable Declarations -----------------------*/
-/* the images of the unit: 1, 2 and 3 levels tall, keys starting at 0 and
- * stepping by 0x10, in the default lite 512-byte layout */
-extern const struct full_fixture FULL_FIXTURES[];
-extern const size_t FULL_FIXTURES_SZ;
-/*--------------------- Public Variable Declarations END ---------------------*/
-
-
 /*----------------------------- Public Functions -----------------------------*/
-/**
- * @brief   Path of the fixture `temp_full_generate' serves a request with
- *
- * The name is `bptr_files/temp/full/<lay_cnt>-<st>-<interval>.bptr', relative
- * to the working directory.  The layout (`is_lite' and `node_size') is not part
- * of it, so requests that differ only there share one name; the short-circuit
- * of `temp_full_generate' is what refuses an existing file that does not match.
- * The generator and its callers both build the name here, so a loader cannot
- * look for a name the generator no longer writes.
- *
- * @param[out] buf        destination, always NUL terminated
- * @param[in]  size       capacity of @p buf
- * @param[in]  lay_cnt    number of levels
- * @param[in]  st         first key
- * @param[in]  interval   distance between two successive keys
- *
- * @return  the number of characters written, `snprintf' semantics: a truncated
- *          name returns the length it would have needed.  Even with an extreme
- *          `lay_cnt', `st' and `interval' the name is at most 78 bytes (21 for
- *          the directory, 10 + 20 + 20 for the three fields, 7 for the
- *          separators and the suffix), so a `PATH_MAX' buffer always holds it
- *          whole.
- */
-int temp_full_path(char *buf, size_t size, unsigned int lay_cnt, int64_t st,
-                   int64_t interval);
 /**
  * @brief   Build, or reuse, a perfectly full tree fixture of @p lay_cnt levels
  *
@@ -125,8 +72,6 @@ int temp_instantiate(const char *path, const char *temp);
 void temp_full_verify(struct bptr *bptr,
                       unsigned int lay_cnt, int64_t st, int64_t interval,
                       _Bool has_new_kv, int64_t key, int64_t val);
-
-int cmp_i64(const void *lhs, const void *rhs);
 /*--------------------------- Public Functions END ---------------------------*/
 
 #endif
