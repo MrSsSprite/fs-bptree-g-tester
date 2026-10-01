@@ -7,17 +7,23 @@ TU_NAME    := temp
 TU_SRC_DIR := src
 TU_OBJ_DIR := $(OBJ_DIR)/utils/$(TU_NAME)
 
-TARGETS := temp_gen
+TARGETS := temp_gen temp_inst
 BINS    := $(addprefix $(BIN_DIR)/, $(TARGETS))
 
 .PHONY: all clean
 
 all: $(BINS)
 
-# `temp_full.o' is the generator, the name convention and the status names every
-# tool shares; the library objects are the same ones the units link.
+# `temp_full.o' is the generator, the name convention, the status names and the
+# parent directory helper every tool shares; the library objects are the same
+# ones the units link.
 $(BIN_DIR)/temp_gen: $(TU_OBJ_DIR)/main_gen.o $(TU_OBJ_DIR)/temp_full.o \
                      $(CORE_OBJS)
+	@mkdir -p $(@D)
+	$(CC) $^ -o $@
+
+$(BIN_DIR)/temp_inst: $(TU_OBJ_DIR)/main_inst.o $(TU_OBJ_DIR)/temp_inst.o \
+                      $(TU_OBJ_DIR)/temp_full.o $(CORE_OBJS)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $@
 

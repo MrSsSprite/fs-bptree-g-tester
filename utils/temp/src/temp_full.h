@@ -91,15 +91,17 @@ const char *temp_full_strerror(int status);
  *
  * A split test starts from a pristine template: this copies it to a name of its
  * own instead of loading and modifying the template itself.  @p dst is used as
- * given (relative to the working directory), and an existing destination is
- * never overwritten.
+ * given (relative to the working directory), and it is created exclusively, so
+ * an existing destination is never written to.  A copy that fails after the
+ * destination was created is removed before returning, so that a retry cannot
+ * mistake a truncated image for a complete one.
  *
  * @param[in] dst  destination path, created with the parent directories it needs
  * @param[in] src  image to copy
  *
  * @return  0 when the image was copied, 1 when @p dst already exists (it is
  *          left untouched) and -1 when the copy failed, with `errno' set to the
- *          reason.
+ *          reason of the failing call.
  */
 int temp_instantiate(const char *dst, const char *src);
 /**
