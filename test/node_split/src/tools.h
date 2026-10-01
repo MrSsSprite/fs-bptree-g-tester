@@ -8,9 +8,10 @@
 
 
 /*------------------------------ Public Defines ------------------------------*/
-/* the stand-alone template tools, relative to the working directory: the unit
- * spawns them and never searches `PATH' for them */
-#define TOOLS_TEMP_GEN    "bin/temp_gen"
+/* the stand-alone template tools the unit needs, relative to the working
+ * directory: it spawns them and never searches `PATH' for them.  The unit does
+ * not generate a template -- `bin/temp_gen' is the caller's tool -- so it has
+ * no handle on it. */
 #define TOOLS_TEMP_INST   "bin/temp_inst"
 #define TOOLS_TEMP_VERIFY "bin/temp_verify"
 
@@ -38,21 +39,6 @@
  *          value)
  */
 int tools_run(char *const argv[]);
-/**
- * @brief   Generate one template with `bin/temp_gen'
- *
- * @param[in] dir        directory to write the template to
- * @param[in] lay_cnt    number of levels
- * @param[in] st         first key
- * @param[in] interval   distance between two successive keys
- * @param[in] is_lite    use the 4-byte child pointer layout
- * @param[in] node_size  size of a node in bytes
- *
- * @return  the status `tools_run' reports: 0 generated, 1 generation failed,
- *          2 usage.  The tool names the reason of a failure on stderr.
- */
-int tools_generate(const char *dir, unsigned int lay_cnt, int64_t st,
-                   int64_t interval, _Bool is_lite, uint32_t node_size);
 /**
  * @brief   Copy a template to an instance with `bin/temp_inst'
  *
