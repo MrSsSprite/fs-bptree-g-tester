@@ -2,6 +2,7 @@
 #include "temp_split.h"
 #include "templates.h"
 #include "tools.h"
+#include "progress.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
 #include "bptr_static.h"
@@ -238,7 +239,7 @@ static struct bptr_node *split_descend(struct bptr *self, int64_t key)
 /*-------------------------------- Test Units --------------------------------*/
 void test_full_split(void)
 {
-   char inst[PATH_MAX], path[PATH_MAX], msg[PATH_MAX + 160];
+   char inst[PATH_MAX], path[PATH_MAX], pattern[PATH_MAX], msg[PATH_MAX + 160];
    char err[PATH_MAX + 128];
    const struct template *tmpls;
    size_t tmpl_cnt;
@@ -301,25 +302,30 @@ void test_full_split(void)
       printf("  %zu positions: %u keys per leaf, %u children and %u keys per "
              "node, %" PRIu64 " records\n", gap_cnt, lay.leaf_up - 1,
              lay.brch_up, lay.brch_up - 1, lay.rec_cnt);
+      /* the instances of this template as one name: the verdict line of each
+       * phase below names the set it covered */
+      snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-*.bptr", tmpl->lay_cnt);
+      _bptr_path(pattern, sizeof pattern, inst);
 
       /*-------- split one fresh copy of the template per position ----------*/
       for (size_t gap_i = 0; gap_i < gap_cnt; gap_i++)
        {
          unsigned int gap = split_gap_at(&lay, gap_i);
          int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
-         int status;
+         int status, unload_rc;
          bptr_node_t sibling;
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
                   tmpl->lay_cnt, gap_i);
          _bptr_path(path, sizeof path, inst);
-         printf("    split %s: key %" PRIi64 " (position %zu/%zu, %u keys "
-                "below it)\n", path, k, gap_i + 1, gap_cnt, gap);
+         progress_update("    split %s: key %" PRIi64 " (position %zu/%zu, "
+                         "%u keys below it)", path, k, gap_i + 1, gap_cnt, gap);
 
          /* a run that a failing case aborted leaves instances behind, and the
           * copy refuses to overwrite a file that already exists */
          remove(path);
          status = tools_instantiate(tmpl->path, path);
+         if (status != 0) progress_break();
          tools_strstatus(err, sizeof err, TOOLS_TEMP_INST, status);
          snprintf(msg, sizeof msg, "failed to instantiate %s from %s: %s",
                   path, tmpl->path, err);
@@ -327,16 +333,19 @@ void test_full_split(void)
 
          snprintf(msg, sizeof msg, "failed to load the instance %s", path);
          bptr = bptr_load(path, SPLIT_CACHE_CAP, &cmp_i64);
+         if (bptr == NULL) progress_break();
          TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
 
          node = split_descend(bptr, k);
          snprintf(msg, sizeof msg, "failed to fetch the leaf of %s for key %"
                   PRIi64, path, k);
+         if (node == NULL) progress_break();
          TEST_ASSERT_NOT_NULL_MESSAGE(node, msg);
 
          sibling = bptr_node_split(bptr, node, &k, &v);
          snprintf(msg, sizeof msg, "split of key %" PRIi64 " at %s failed: "
                   "bptr_errno %d", k, path, bptr_errno);
+         if (sibling == 0) progress_break();
          TEST_ASSERT_GREATER_THAN_UINT64_MESSAGE(0, sibling, msg);
 
          /* the split returns the sibling it created, which is the node the
@@ -344,6 +353,7 @@ void test_full_split(void)
          snprintf(msg, sizeof msg, "split of key %" PRIi64 " at %s reported "
                   "the sibling %llu while the leaf links to %llu", k, path,
                   (unsigned long long)sibling, (unsigned long long)node->next);
+         if (node->next != sibling) progress_break();
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->next, sibling, msg);
          bptr_node_unload(bptr, node);
 
@@ -351,20 +361,23 @@ void test_full_split(void)
           * on the file in the second loop, once no instance of this template is
           * open any more */
          snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
-         TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
+         unload_rc = bptr_unload(bptr);
+         if (unload_rc != BPTR_E_SUCCESS) progress_break();
+         TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, unload_rc, msg);
        }
+      progress_done("    split %s: PASS", pattern);
 
       /*------- and let the tool check every one of them from the file -------*/
       for (size_t gap_i = 0; gap_i < gap_cnt; gap_i++)
        {
          unsigned int gap = split_gap_at(&lay, gap_i);
          int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
-         int status;
+         int status, rm_rc;
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
                   tmpl->lay_cnt, gap_i);
          _bptr_path(path, sizeof path, inst);
-         printf("    verify %s: key %" PRIi64 "\n", path, k);
+         progress_update("    verify %s: key %" PRIi64, path, k);
 
          /* the split has to be in the file, not just in the cache it was
           * written through.  Every instance of this template is flushed and
@@ -372,14 +385,18 @@ void test_full_split(void)
           * image from a clean file, and the whole tree, not just the nodes the
           * split touched, is checked against the shape of the template. */
          status = tools_verify(tmpl->lay_cnt, st, interval, 1, k, v, path);
+         if (status != 0) progress_break();
          tools_strstatus(err, sizeof err, TOOLS_TEMP_VERIFY, status);
          snprintf(msg, sizeof msg, "failed to verify the instance %s: %s",
                   path, err);
          TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);
 
-         TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove(path),
+         rm_rc = remove(path);
+         if (rm_rc != 0) progress_break();
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, rm_rc,
                                        "failed to remove the instance");
        }
+      progress_done("    verify %s: PASS", pattern);
     }
 }
 /*------------------------------ Test Units END ------------------------------*/
