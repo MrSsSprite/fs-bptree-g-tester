@@ -55,8 +55,11 @@ but Unity continues after a failed case: a template the guard rejects also fails
 the split case, and the run's exit code is the verdict -- a defect is never a
 false pass.
 
-The tools print their own progress on stdout, so a run interleaves their lines
-with the unit's; the unit's summary is the last `N Tests ...` block.
+The runner captures what every tool it spawns prints, on both streams, and
+replays the capture on stderr **only when that tool fails**.  A passing run is
+therefore the unit's own lines and nothing else -- no Unity block per verify
+call, no `temp_inst: ... copied` per position -- and a tool's report of a defect
+still appears above the unit's message for it.
 
 ## The tools
 
@@ -65,12 +68,15 @@ The unit spawns the two it needs by `posix_spawn`/`waitpid` (`src/tools.{h,c}`),
 relative to the working directory -- there is no `PATH` search and no template
 code in this directory any more.  `bin/temp_gen` is not among them: preparing a
 template is the caller's step, so the unit holds no handle on the generator.
+Neither tool writes into the unit's log: the runner gives the child a pipe in
+place of its stdout and stderr, keeps the capture of a tool that exited 0 to
+itself, and quotes one that did not on stderr (`src/tools.{h,c}`).
 
 | Tool | Call | Exit status |
 | --- | --- | --- |
 | `bin/temp_gen` | caller's tool: `[--dir DIR] [--norm] [--node-size N] LAY_CNT ST INTERVAL` | 0 written, 1 not built (reason on stderr), 2 usage |
 | `bin/temp_inst` | `SRC DST` (spawned by the unit) | 0 copied, 1 `DST` exists (untouched), 2 usage, 3 copy error |
-| `bin/temp_verify` | `[--lay-cnt N] [--st S] [--interval I] [--key K --val V] TEMPLATE...` (spawned by the unit) | 0 verified, 1 check failed (Unity output on stdout), 2 usage, 3 load failure |
+| `bin/temp_verify` | `[--lay-cnt N] [--st S] [--interval I] [--key K --val V] TEMPLATE...` (spawned by the unit) | 0 verified, 1 check failed (the report is captured by the runner and replayed on stderr), 2 usage, 3 load failure |
 
 `temp_inst` creates the parent directories of `DST`.  `temp_verify` reads the
 layout from the template name when it is not given; the unit always passes
@@ -103,7 +109,7 @@ modifies a copy.
 | --- | --- |
 | `src/main.c` | `main` (the directory argument, the notices and the empty-path warning) and the `test_temp` guard case |
 | `src/templates.{h,c}` | `struct template`, the name convention, the directory scan and `cmp_i64` |
-| `src/tools.{h,c}` | the `posix_spawn` runner and the `temp_inst`/`temp_verify` wrappers |
+| `src/tools.{h,c}` | the `posix_spawn` runner (the tool's output is captured and replayed on stderr only when it fails) and the `temp_inst`/`temp_verify` wrappers |
 | `src/temp_split.{h,c}` | the `test_full_split` case: where to insert, how to get there |
 | `src/bptr_static.h` | declaration of the `BPTR_STATIC` internals the unit calls |
 
@@ -126,7 +132,9 @@ loop hand each instance file to `bin/temp_verify` (`--lay-cnt`, `--st`,
 `--interval`, `--key`, `--val`), assert exit 0 and remove it.  There is no
 in-memory verification pass any more: the tool is the verifier, so a defect in
 the split, in the flush of the nodes it touched, or in the header it rewrote is
-seen on the file that was actually written.
+seen on the file that was actually written.  The runner captures what the tool
+printed: the `verify` line below is the whole report of a checked instance, and
+the tool's own Unity block is replayed on stderr only for the call that failed.
 
 Every node of a perfectly full image is full, so the split cascades through
 every level of the template and adds one level: the tool is asked for
@@ -147,10 +155,13 @@ between two keys of the image).  The skip is never silent, and `test_temp`
 verifies a skipped template like any other, so a directory of tall or dense
 templates still fails loudly when one of them is broken.
 
-The case prints one line per insertion, so a defect the tool reports can still
-be traced to the position under test.  It writes one instance image per
-position (up to ~58 MB, all of them removed on the way out); a run that a
-failing case aborts leaves some behind -- the next run removes them as it goes.
+The case prints one line per insertion -- `split` for the image it just wrote,
+`verify` for the check of the flushed instance -- so a defect the tool reports
+can still be traced to the position under test: the replayed report sits on
+stderr next to the `verify` line that named the image.  The case writes one
+instance image per position (up to ~58 MB, all of them removed on the way out);
+a run that a failing case aborts leaves some behind -- the next run removes them
+as it goes.
 
 ## What `temp_verify` checks
 
