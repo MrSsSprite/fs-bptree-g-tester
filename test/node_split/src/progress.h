@@ -20,8 +20,9 @@
  *        report it replays.
  * @note  Whether stdout is a terminal is decided once, by the first call of the
  *        module; a caller that reopens stdout later keeps that answer.  A line
- *        wider than the terminal is clipped, and one longer than the room the
- *        module renders in is cut short.
+ *        wider than the terminal is clipped from the left, down to the `...'
+ *        marker itself at the degenerate widths, and one longer than the room
+ *        the module renders in is cut short.
  */
 void progress_update(const char *fmt, ...);
 /**

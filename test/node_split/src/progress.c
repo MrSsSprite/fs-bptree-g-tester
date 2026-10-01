@@ -170,8 +170,9 @@ static size_t _prog_width(void)
  *
  * A clipped line loses its head, behind a `...': what an update moves -- the
  * instance name, the key, the position -- is at its end, while the head is the
- * same for the whole loop.  A terminal too narrow for that end cuts it too; the
- * line is only ever shorter than what the caller formatted.
+ * same for the whole loop.  A terminal narrower than the marker itself keeps the
+ * `...' alone, and the line is then longer than the three columns it had -- the
+ * least a rewrite can do and still show that something is being cut.
  *
  * @param[out] dst   destination, NUL terminated
  * @param[in]  size  capacity of @p dst
@@ -199,9 +200,10 @@ static size_t _prog_render(char *dst, size_t size, const char *fmt, va_list ap,
    width = clip ? _prog_width() : len;
    if (len > width)
     {
+      /* `width < len' here, and `len' is at most the size of `full', so the
+       * tail -- and the marker before it -- stay inside the buffer */
       size_t tail = width > 3 ? width - 3 : 0;
 
-      if (tail + 4 > sizeof full) tail = sizeof full - 4;
       memmove(full, full + len - tail, tail);
       full[tail] = '\0';
       snprintf(dst, size, "...%s", full);
