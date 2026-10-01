@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "tools.h"
+#include "progress.h"
 #include <errno.h>
 #include <inttypes.h>
 #include <spawn.h>
@@ -261,8 +262,11 @@ static char *_capture(int fd, size_t *out_len, size_t *dropped)
 static void _replay(const char *cmd, const char *buf, size_t len,
                     size_t dropped)
 {
-   /* the unit's line for this tool is on stdout: flush it, or it lands in the
-    * log after the report it is there to introduce */
+   /* The unit's line for this tool is on stdout, and the loop that called it
+    * may have a live progress line open: both have to be out before the report,
+    * or it is written over them (`progress_break' leaves a line of the log
+    * behind when stdout is not a terminal) */
+   progress_break();
    fflush(stdout);
 
    if (buf != NULL && len != 0)
