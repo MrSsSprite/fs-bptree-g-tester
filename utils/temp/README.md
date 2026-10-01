@@ -131,9 +131,11 @@ global chain, `prev`/`next`/`parent`, fullness, every key against the
 
 A layout parameter that is not given is read off the file name.  A name that
 does not conform is an error, not a default: the layout cannot be recovered
-from the image itself.  `--key`/`--val` (both or neither) tell the checker that
-one record was inserted -- how a split instance is checked: it then expects
-`lay_cnt + 1` levels and tolerates exactly that one record.
+from the image itself.  The lattice may start at any key `ST`, not only at 0;
+an `INTERVAL` of 0 is a parameter error (exit 2) because a lattice cannot step
+by nothing.  `--key`/`--val` (both or neither) tell the checker that one record
+was inserted -- how a split instance is checked: it then expects `lay_cnt + 1`
+levels and tolerates exactly that one record.
 
 ```
 temp_verify: <path>: ok

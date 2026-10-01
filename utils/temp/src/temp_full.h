@@ -107,6 +107,9 @@ int temp_instantiate(const char *dst, const char *src);
 /**
  * @brief   Assert the shape of a loaded template
  *
+ * The template holds a perfectly full tree over the `st'/`interval' lattice,
+ * which may start at any @p st; @p interval must not be 0.
+ *
  * Asserts with fixed messages, so it is only callable from inside a Unity case
  * (`RUN_TEST' installs the abort frame an assertion longjmps to).  The
  * definition in `temp_verify.c' documents what is checked.

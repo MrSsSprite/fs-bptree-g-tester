@@ -98,7 +98,9 @@ int main(int argc, char **argv)
        }
       else if (!strcmp(arg, "--interval"))
        {
-         if (++at == argc || !_parse_i64(argv[at], &interval))
+         /* a zero step is not a lattice: refuse it here, before a file is
+          * loaded, rather than let the count checks divide by it */
+         if (++at == argc || !_parse_i64(argv[at], &interval) || interval == 0)
           { usage(stderr, argv[0]); return VERIFY_EXIT_USAGE; }
          has_interval = 1;
        }
@@ -146,6 +148,13 @@ int main(int argc, char **argv)
          if (!has_lay_cnt) req_lay_cnt = name_lay_cnt;
          if (!has_st) req_st = name_st;
          if (!has_interval) req_interval = name_interval;
+       }
+      if (req_interval == 0)
+       {
+         fprintf(stderr, "temp_verify: %s: interval 0 is not a key lattice\n",
+                 path);
+         status = VERIFY_EXIT_USAGE;
+         break;
        }
 
       g_req.bptr = bptr_load(path, TEMPLATE_CACHE_CAP, &cmp_i64);
@@ -211,8 +220,8 @@ static void usage(FILE *stream, const char *prog)
            "the checker that one record was inserted (both or neither).\n"
            "\n"
            "  --lay-cnt N     number of levels\n"
-           "  --st S          first key\n"
-           "  --interval I    distance between two successive keys\n"
+           "  --st S          first key of the lattice\n"
+           "  --interval I    distance between two successive keys, not 0\n"
            "  --key K         the inserted key\n"
            "  --val V         the value of the inserted key\n"
            "  -h, --help      print this help and exit\n"

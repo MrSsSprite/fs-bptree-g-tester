@@ -20,7 +20,9 @@ static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
  * Walks a loaded image and checks its shape: leftmost leaf, one global chain
  * per level, leaf fullness and `st'/`interval'/`val == key * 2`, internal-node
  * fullness, flags/levels, parent pointers, and
- * `key[i] == leftmost key of child i + 1'.
+ * `key[i] == leftmost key of child i + 1'.  The lattice may start at any @p st
+ * -- the record-count checks below measure the walk from it -- and @p interval
+ * must not be 0, because they divide by it.
  *
  * `has_new_kv' / @p key / @p val describe an optional inserted record: with
  * `has_new_kv' the verifier expects `height == lay_cnt + 1' and tolerates that
@@ -37,9 +39,15 @@ void temp_full_verify(struct bptr *bptr,
    struct bptr_node *node, *par_n, *next_n;
    _Bool has_met_new_kv = 0;
    uint_fast64_t leaf_cnt = 0;
+   /* The lattice starts here: `st' below walks it and is advanced by
+    * `interval' as keys are laid down, so the count checks at the end have to
+    * measure the walk from the start key rather than from 0. */
+   const int64_t st0 = st;
 
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "bptr == NULL");
    if (lay_cnt == 0) return;
+   /* the count checks divide by it: a zero step is not a lattice */
+   TEST_ASSERT_TRUE_MESSAGE(interval != 0, "interval == 0");
    TEST_ASSERT_EQUAL_UINT32_MESSAGE((has_new_kv ? lay_cnt + 1 : lay_cnt),
                                     bptr->height, "height incorrect");
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, bptr->root_idx, "root_idx == 0");
@@ -162,22 +170,24 @@ void temp_full_verify(struct bptr *bptr,
        }
       leaf_cnt++;
     }
-   /* `st' walks the keys of the original `st' sequence only: the inserted key
-    * is skipped where it is met, and the leaf it was added to was split in
-    * two, so the walk sees the keys of `leaf_cnt - 1' full leaves.  The
-    * inserted record is one more than that in the tree's own count. */
+   /* `st' has walked the keys of the original lattice only, from `st0': the
+    * inserted key is skipped where it is met, and the leaf it was added to was
+    * split in two, so the walk sees the keys of `leaf_cnt - 1' full leaves.
+    * The inserted record is one more than that in the tree's own count. */
    if (has_new_kv)
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         ((int64_t)(leaf_cnt - 1) * (bptr->node_bound.leaf.up - 1)) * interval,
+         st0 + ((int64_t)(leaf_cnt - 1) * (bptr->node_bound.leaf.up - 1))
+                  * interval,
          st,
          "record count (derived from st) not correct");
    else
       TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         (int64_t)leaf_cnt * (bptr->node_bound.leaf.up - 1) * interval,
+         st0 + (int64_t)leaf_cnt * (bptr->node_bound.leaf.up - 1) * interval,
          st,
          "record count (derived from st) not correct");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(
-      (uint64_t)(st / interval) + (has_new_kv ? 1u : 0u), bptr->record_cnt,
+      (uint_fast64_t)((st - st0) / interval) + (has_new_kv ? 1u : 0u),
+      bptr->record_cnt,
       "record count does not match st");
 
    /* A template holds one node per level of its shape: `brch.up' children per
