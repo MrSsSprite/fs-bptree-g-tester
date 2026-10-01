@@ -110,9 +110,11 @@ int main(int argc, char *argv[])
  *
  * The guard on the templates.  A split case is only meaningful once the image
  * it instantiates is known to be correct, so every template of the unit's list
- * is handed to `bin/temp_verify' here, ahead of the cases that will modify one.
- * A defect aborts the case -- and with it the run -- before anything is
- * instantiated, and the message names the tool, the path and its status.
+ * is handed to `bin/temp_verify' here, ahead of the case that will modify one.
+ * A defect fails this case first, but Unity continues with `test_full_split',
+ * which then fails on copies of the same image as well; the run's exit code is
+ * the verdict, so a defect is never a false pass.  The message names the tool,
+ * the path and its status.
  */
 void test_temp(void)
 {
