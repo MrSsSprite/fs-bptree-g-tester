@@ -7,7 +7,7 @@ TU_NAME    := temp
 TU_SRC_DIR := src
 TU_OBJ_DIR := $(OBJ_DIR)/utils/$(TU_NAME)
 
-TARGETS := temp_gen temp_inst
+TARGETS := temp_gen temp_inst temp_verify
 BINS    := $(addprefix $(BIN_DIR)/, $(TARGETS))
 
 .PHONY: all clean
@@ -24,6 +24,12 @@ $(BIN_DIR)/temp_gen: $(TU_OBJ_DIR)/main_gen.o $(TU_OBJ_DIR)/temp_full.o \
 
 $(BIN_DIR)/temp_inst: $(TU_OBJ_DIR)/main_inst.o $(TU_OBJ_DIR)/temp_inst.o \
                       $(TU_OBJ_DIR)/temp_full.o $(CORE_OBJS)
+	@mkdir -p $(@D)
+	$(CC) $^ -o $@
+
+# the verifier is the one tool that runs Unity: `temp_full_verify' asserts
+$(BIN_DIR)/temp_verify: $(TU_OBJ_DIR)/main_verify.o $(TU_OBJ_DIR)/temp_verify.o \
+                        $(TU_OBJ_DIR)/temp_full.o $(UNITY_OBJ) $(CORE_OBJS)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $@
 
