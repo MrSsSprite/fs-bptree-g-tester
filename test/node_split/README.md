@@ -61,6 +61,32 @@ therefore the unit's own lines and nothing else -- no Unity block per verify
 call, no `temp_inst: ... copied` per position -- and a tool's report of a defect
 still appears above the unit's message for it.
 
+The split case in turn draws its own progress as **one live line per phase**: on
+a terminal the line is rewritten in place while the loop walks the positions, so
+a 2-level template takes one line rather than the ~1065 it prints turns, and the
+phase ends with its verdict:
+
+```
+    split bptr_files/temp/split/2-*.bptr: PASS
+    verify bptr_files/temp/split/2-*.bptr: PASS
+```
+
+A redirected stdout is read as a log, so it never sees the live line -- it gets
+the verdict lines alone (13 lines for a directory holding the level-1 template,
+23 for the three of `bin/temp_gen`'s easy layouts).  A line wider than the
+terminal is clipped from the left behind a `...`, which keeps the instance name,
+the key and the position visible.  When a phase fails, the turn that failed is
+finished off before the assertion reports it, so a log still says which position
+died:
+
+```
+    verify bptr_files/temp/split/2-784.bptr: key 3123
+src/temp_split.c:...:test_full_split:FAIL: failed to verify the instance ...
+```
+
+`src/progress.{h,c}` holds those three calls: `progress_update`,
+`progress_done` and `progress_break`.
+
 ## The tools
 
 The template work lives in `utils/temp` and is reached as stand-alone programs.
@@ -110,6 +136,7 @@ modifies a copy.
 | `src/main.c` | `main` (the directory argument, the notices and the empty-path warning) and the `test_temp` guard case |
 | `src/templates.{h,c}` | `struct template`, the name convention, the directory scan and `cmp_i64` |
 | `src/tools.{h,c}` | the `posix_spawn` runner (the tool's output is captured and replayed on stderr only when it fails) and the `temp_inst`/`temp_verify` wrappers |
+| `src/progress.{h,c}` | the live progress line of a phase and its verdict: one line rewritten in place on a terminal, the verdicts alone in a redirected run |
 | `src/temp_split.{h,c}` | the `test_full_split` case: where to insert, how to get there |
 | `src/bptr_static.h` | declaration of the `BPTR_STATIC` internals the unit calls |
 
@@ -155,13 +182,15 @@ between two keys of the image).  The skip is never silent, and `test_temp`
 verifies a skipped template like any other, so a directory of tall or dense
 templates still fails loudly when one of them is broken.
 
-The case prints one line per insertion -- `split` for the image it just wrote,
-`verify` for the check of the flushed instance -- so a defect the tool reports
-can still be traced to the position under test: the replayed report sits on
-stderr next to the `verify` line that named the image.  The case writes one
-instance image per position (up to ~58 MB, all of them removed on the way out);
-a run that a failing case aborts leaves some behind -- the next run removes them
-as it goes.
+The case draws one live line per phase -- `split` for the image it just wrote in
+the first loop, `verify` for the check of the flushed instance in the second --
+and replaces it with the verdict of that phase when the loop is through, so a
+defect the tool reports can still be traced to the position under test: the
+replayed report sits on stderr next to the line that named the image, and in a
+redirected run that line is printed before the assertion message.  The case
+writes one instance image per position (up to ~58 MB, all of them removed on the
+way out); a run that a failing case aborts leaves some behind -- the next run
+removes them as it goes.
 
 ## What `temp_verify` checks
 
