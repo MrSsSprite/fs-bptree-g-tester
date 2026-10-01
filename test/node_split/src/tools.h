@@ -30,6 +30,13 @@
  * directory of the unit -- and reaped with `waitpid', so the caller sees the
  * whole run and nothing of the tool leaks into this process.
  *
+ * The stdout **and** the stderr of the tool are captured by the runner, not
+ * inherited: a tool that does its job says nothing in the unit's log, because
+ * the unit prints its own line for it.  A tool that fails has what it printed
+ * replayed verbatim on **stderr**, ahead of the message the caller builds from
+ * the status -- that report names the check that failed, which the status
+ * alone does not.
+ *
  * @param[in] argv  argument vector; `argv[0]' is the tool to run and the last
  *                  entry is NULL
  *
@@ -48,7 +55,8 @@ int tools_run(char *const argv[]);
  * @param[in] dst  destination, left untouched when it already exists
  *
  * @return  the status `tools_run' reports: 0 copied, 1 @p dst exists,
- *          2 usage, 3 copy error.  The tool names the reason on stderr.
+ *          2 usage, 3 copy error.  The tool names the reason on stderr, which
+ *          the runner replays when the copy fails.
  */
 int tools_instantiate(const char *src, const char *dst);
 /**
@@ -67,9 +75,9 @@ int tools_instantiate(const char *src, const char *dst);
  * @param[in] val         value of the inserted record, when there is one
  * @param[in] path        image to check
  *
- * @return  the status `tools_run' reports: 0 verified, 1 check failed (the
- *          tool's Unity output on stdout), 2 usage, 3 the image cannot be
- *          loaded
+ * @return  the status `tools_run' reports: 0 verified, 1 a check failed (the
+ *          tool's Unity report is then replayed on stderr), 2 usage, 3 the
+ *          image cannot be loaded
  */
 int tools_verify(unsigned int lay_cnt, int64_t st, int64_t interval,
                  _Bool has_new_kv, int64_t key, int64_t val, const char *path);
