@@ -35,6 +35,14 @@
 /*--------------------------- Forward Declarations ---------------------------*/
 static void _gen_drop(const char *path);
 static int _gen_fail(int status, const char *path);
+static void _gen_report_interval(unsigned int lay_cnt, int64_t st,
+                                 int64_t interval, _Bool is_lite,
+                                 uint32_t node_size);
+static _Bool _gen_ascending(unsigned int lay_cnt, int64_t st, int64_t interval,
+                            _Bool is_lite, uint32_t node_size,
+                            int64_t *asc_st, int64_t *asc_interval);
+static _Bool _gen_record_cnt(unsigned int lay_cnt, _Bool is_lite,
+                             uint32_t node_size, int64_t *rec_cnt);
 static int _fixture_matches(const char *path, unsigned int lay_cnt,
                             _Bool is_lite, uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
@@ -82,17 +90,26 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  * @param[in] dir        directory of the template, or with a trailing '/'
  * @param[in] lay_cnt    number of levels; 1 yields a single leaf
  * @param[in] st         first key
- * @param[in] interval   distance between two successive keys
+ * @param[in] interval   distance between two successive keys; must not be
+ *                       negative, so that the keys ascend
  * @param[in] is_lite    use the 4-byte child pointer layout
  * @param[in] node_size  size of a node in bytes
  *
- * @return  TEMP_FULL_OK (0) on success; TEMP_FULL_E_LAY_CNT or
- *          TEMP_FULL_E_NODE_SIZE (negative: the request cannot be served) or a
- *          positive environment error otherwise.  An error is named by
- *          `temp_full_strerror' and reported on stderr with the path being
- *          worked on, once there is one: the template directory first, then the
- *          template path.
+ * @return  TEMP_FULL_OK (0) on success; TEMP_FULL_E_LAY_CNT,
+ *          TEMP_FULL_E_NODE_SIZE or TEMP_FULL_E_INTERVAL (negative: the request
+ *          cannot be served) or a positive environment error otherwise.  An
+ *          error is named by `temp_full_strerror' and reported on stderr with
+ *          the path being worked on, once there is one: the template directory
+ *          first, then the template path.
  *
+ * @note    A negative @p interval is refused (TEMP_FULL_E_INTERVAL): the keys of
+ *          a template have to ascend, because the split of a full node and the
+ *          verifier both search a node in the comparator's order, so a
+ *          descending lattice is not a tree they can serve.  The refusal is
+ *          reported before a path is built -- no directory and no file is
+ *          touched -- and it names the ascending request that builds the same
+ *          keys: `interval * -1', starting at `st + interval * (record_cnt - 1)',
+ *          the last key of the descending lattice.
  * @note    Returns TEMP_FULL_OK without touching a file that already exists and
  *          matches the requested layout; a file that does not match, be it a
  *          partial image left by an interrupted run or one built with other
@@ -132,6 +149,16 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
    if (node_size < BPTR_NODE_METADATA_BYTE + ptr_size +
                     2 * ((uint32_t)sizeof (int64_t) + ptr_size))
       return _gen_fail(TEMP_FULL_E_NODE_SIZE, NULL);
+   /* A negative interval lays the keys down in descending order, and the keys of
+    * a template have to ascend: the image is loaded with `cmp_i64' and both the
+    * split of a full node and the verifier search it in that order.  Refuse the
+    * request before a directory or a file is touched, and name the ascending
+    * request that builds the same keys. */
+   if (interval < 0)
+    {
+      _gen_report_interval(lay_cnt, st, interval, is_lite, node_size);
+      return TEMP_FULL_E_INTERVAL;
+    }
 
    temp_full_path(path, sizeof path, dir, lay_cnt, st, interval);
    if (_ensure_par_dirs(path, 0755) == -1)
@@ -220,6 +247,8 @@ const char *temp_full_strerror(int status)
    case TEMP_FULL_OK           : return "success";
    case TEMP_FULL_E_LAY_CNT    : return "lay_cnt out of range";
    case TEMP_FULL_E_NODE_SIZE  : return "node_size out of range";
+   case TEMP_FULL_E_INTERVAL   : return "interval is negative: a template's "
+                                        "keys must ascend";
    case TEMP_FULL_E_FIXTURE    : return "not a complete template of this layout; "
                                         "delete it and retry";
    case TEMP_FULL_E_UNREADABLE : return "cannot be read";
@@ -542,5 +571,133 @@ static int _gen_fail(int status, const char *path)
               temp_full_strerror(status));
 
    return status;
+}
+
+
+/**
+ * @brief   Report a negative interval and the ascending request that replaces it
+ *
+ * The keys of a template have to ascend -- the split of a full node and the
+ * verifier both search a node in the comparator's order -- so a descending
+ * lattice is refused.  The refusal is named by `temp_full_strerror', like every
+ * other failure, and is followed by the request that builds the same keys:
+ * negate the interval and start at the last key of the descending lattice,
+ * `st + interval * (record_cnt - 1)'.
+ *
+ * The numbers are printed only when they can be worked out: a layout that holds
+ * no tree, or an `int64_t' overflow, leaves the recipe symbolic rather than
+ * suggesting a start key that would be wrong.
+ *
+ * @param[in] lay_cnt    levels of the refused request
+ * @param[in] st         first key of the refused request
+ * @param[in] interval   its interval; negative, and never 0
+ * @param[in] is_lite    child pointer layout of the refused request
+ * @param[in] node_size  node size of the refused request
+ */
+static void _gen_report_interval(unsigned int lay_cnt, int64_t st,
+                                 int64_t interval, _Bool is_lite,
+                                 uint32_t node_size)
+{
+   int64_t asc_st, asc_interval;
+
+   (void)_gen_fail(TEMP_FULL_E_INTERVAL, NULL);
+   if (_gen_ascending(lay_cnt, st, interval, is_lite, node_size, &asc_st,
+                      &asc_interval))
+      fprintf(stderr, "temp_full_generate: interval %" PRIi64 " descends; "
+                      "retry with interval %" PRIi64 " and st %" PRIi64
+                      " (interval * -1, from the last key of that lattice)\n",
+              interval, asc_interval, asc_st);
+   else
+      fprintf(stderr, "temp_full_generate: interval %" PRIi64 " descends; "
+                      "retry with interval * -1 and the last key of that "
+                      "lattice as st (st + interval * (record_cnt - 1))\n",
+              interval);
+}
+
+
+/**
+ * @brief   The ascending request that builds the same keys as a descending one
+ *
+ * A lattice laid down by a negative @p interval holds `record_cnt' keys,
+ * `st + interval * k' for k in 0 .. record_cnt - 1; read the other way round it
+ * is the same key set ascending, starting at the last of them and stepping by
+ * `-interval', which is what a request the generator serves looks like.
+ *
+ * @param[in]  lay_cnt        levels of the refused request
+ * @param[in]  st             first key of the refused request
+ * @param[in]  interval       its interval; negative, and never 0
+ * @param[in]  is_lite        child pointer layout of the refused request
+ * @param[in]  node_size      node size of the refused request
+ * @param[out] asc_st         start key of the ascending request
+ * @param[out] asc_interval   its interval, `-interval'
+ *
+ * @return  1 when both outputs were computed, 0 when the layout holds no tree or
+ *          the arithmetic leaves `int64_t' (the caller then prints the recipe
+ *          without numbers)
+ */
+static _Bool _gen_ascending(unsigned int lay_cnt, int64_t st, int64_t interval,
+                            _Bool is_lite, uint32_t node_size,
+                            int64_t *asc_st, int64_t *asc_interval)
+{
+   int64_t rec_cnt;
+   uint64_t step, keys_below, mag;
+
+   if (!_gen_record_cnt(lay_cnt, is_lite, node_size, &rec_cnt)) return 0;
+
+   /* `|interval|', spelled so that negating INT64_MIN cannot overflow */
+   mag = (uint64_t)(-(interval + 1)) + 1u;
+   if (mag > (uint64_t)INT64_MAX) return 0;   /* `-interval' is not an int64_t */
+   /* the last key is `st' minus one step per key below it */
+   keys_below = (uint64_t)rec_cnt - 1u;
+   if (keys_below != 0 && mag > UINT64_MAX / keys_below) return 0;
+   step = mag * keys_below;
+   /* `st' is at most `(uint64_t)st + 2^63' steps away from INT64_MIN, so a longer
+    * drop would leave the range of the start key */
+   if (step > (uint64_t)st + ((uint64_t)1 << 63)) return 0;
+
+   *asc_interval = (int64_t)mag;
+   *asc_st = (int64_t)((uint64_t)st - step);
+   return 1;
+}
+
+
+/**
+ * @brief   Number of records a perfectly full template of a layout holds
+ *
+ * Mirrors the capacity model `bptr_init' derives (`_bptr_bound_set' in
+ * `core/src/bptr_core.c'): a leaf holds `rem_sz / (key_size + value_size)' keys
+ * and an internal node `(rem_sz - ptr) / (key_size + ptr) + 1' children, and a
+ * tree of @p lay_cnt levels is `brch.up^(lay_cnt - 1)' leaves of them.  The
+ * generator writes 8-byte keys and values only, so those sizes are fixed here.
+ *
+ * @param[in]  lay_cnt    number of levels
+ * @param[in]  is_lite    4-byte child pointers, 8-byte otherwise
+ * @param[in]  node_size  size of a node in bytes
+ * @param[out] rec_cnt    record count of that layout
+ *
+ * @return  1 when @p rec_cnt was computed and fits an `int64_t', 0 when the
+ *          layout holds no tree or the product leaves the range
+ */
+static _Bool _gen_record_cnt(unsigned int lay_cnt, _Bool is_lite,
+                             uint32_t node_size, int64_t *rec_cnt)
+{
+   uint64_t rem_sz = (uint64_t)node_size - BPTR_NODE_METADATA_BYTE,
+            ptr_size = is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE,
+            leaf_keys = rem_sz / (2u * (uint64_t)sizeof (int64_t)),
+            brch_up = (rem_sz - ptr_size) /
+                      ((uint64_t)sizeof (int64_t) + ptr_size) + 1u,
+            cnt = leaf_keys;
+
+   /* a layout `bptr_init' would refuse has no record count to speak of */
+   if (leaf_keys == 0 || brch_up < 3) return 0;
+   for (unsigned int level = 1; level < lay_cnt; level++)
+    {
+      if (cnt > UINT64_MAX / brch_up) return 0;
+      cnt *= brch_up;
+    }
+   if (cnt > (uint64_t)INT64_MAX) return 0;
+
+   *rec_cnt = (int64_t)cnt;
+   return 1;
 }
 /*-------------------------- Private Functions END ---------------------------*/

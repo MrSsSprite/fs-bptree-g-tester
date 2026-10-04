@@ -86,10 +86,29 @@ temp_gen: <path>: reused
 `: reused` means a complete template of that layout was already there and was
 left untouched.
 
+A negative `INTERVAL` is refused: the keys of a template have to ascend, because
+the split of a full node and the verifier both search a node in the comparator's
+order, so a descending lattice is not a tree they can serve.  The refusal happens
+before a directory or a file is touched -- an image already sitting under that
+name is left alone, not even reported as `reused` -- and it names the ascending
+request that builds the same keys: `INTERVAL * -1`, starting at the last key of
+the descending lattice, `ST + INTERVAL * (record_cnt - 1)`:
+
+```
+temp_full_generate: interval is negative: a template's keys must ascend
+temp_full_generate: interval -2 descends; retry with interval 2 and st -79858 (interval * -1, from the last key of that lattice)
+```
+
+`record_cnt` is the number of records that layout holds -- `leaf.up - 1` keys per
+leaf over `brch.up^(lay_cnt - 1)` leaves -- so the suggested start is the last
+key of the refused lattice and the two requests hold the same keys.  The numbers
+are printed only when they can be computed: a layout that holds no tree, or an
+`int64_t` overflow, falls back to the symbolic recipe.
+
 | Exit | Meaning |
 | --- | --- |
 | 0 | the template exists |
-| 1 | it could not be built; the reason is named on stderr, as `temp_full_generate: <path>: <reason>` |
+| 1 | it could not be built; the reason is named on stderr as `temp_full_generate: <reason>`, with the path it was working on prefixed once there is one |
 | 2 | the command line cannot be served |
 
 ## `temp_inst`
@@ -168,6 +187,8 @@ check still reported in the Unity output on stdout.
 rm -rf /tmp/tpl
 ./bin/temp_gen --dir /tmp/tpl 1 0 16                    # written,  exit 0
 ./bin/temp_gen --dir /tmp/tpl 1 0 16                    # reused,   exit 0
+./bin/temp_gen --dir /tmp/tpl 3 1004 -2                 # refused,  exit 1 (negative interval)
+./bin/temp_gen --dir /tmp/tpl 3 -79858 2                # the ascending request it suggests
 ./bin/temp_verify /tmp/tpl/1-0-16.bptr                  # ok,       exit 0
 ./bin/temp_verify --lay-cnt 1 --st 0 --interval 16 /tmp/tpl/1-0-16.bptr   # ok
 ./bin/temp_inst /tmp/tpl/1-0-16.bptr /tmp/tpl/inst/a.bptr   # copied, exit 0
