@@ -113,6 +113,11 @@ static void usage(FILE *stream, const char *prog)
            "  --node-size N   size of a node in bytes (default %u)\n"
            "  -h, --help      print this help and exit\n"
            "\n"
+           "The template holds LAY_CNT levels of keys ST, ST + INTERVAL, ...;\n"
+           "INTERVAL must be positive, so that every node of the template\n"
+           "ascends.  A negative one is refused with the request that builds\n"
+           "the same keys instead: interval * -1, starting at the last key.\n"
+           "\n"
            "Exit status: 0 the template exists, 1 it could not be built,\n"
            "2 the command line cannot be served.\n",
            prog, TEMP_FULL_DEFAULT_DIR, GEN_NODE_SIZE_DEFAULT);
