@@ -18,13 +18,15 @@ it.  The unit tests the templates it is **given** and never prepares one: the
 caller writes them first -- `bin/temp_gen` is the tool for that.
 
 ```sh
-make clean && make                 # `make node_split' for this unit alone
+make clean && make cache fflush node_split temp  # all units and tools
 find bptr_files -name '*.bptr' -delete
 
 # prepare the templates to test, one per shape, then hand the directory over
 ./bin/temp_gen --dir bptr_files/temp/full 1 0 16
 ./bin/temp_gen --dir bptr_files/temp/full 2 0 16
 ./bin/temp_gen --dir bptr_files/temp/full 3 0 16
+# a cheap tall-tree smoke test: smaller nodes keep the full template small
+./bin/temp_gen --dir bptr_files/temp/full --node-size 112 4 0 16
 ./bin/node_split                        # default directory, named below
 ./bin/node_split /tmp/node_split_tpls   # or any directory the caller prepared
 ```
@@ -51,9 +53,8 @@ Exit code is the number of failed Unity assertions (`UNITY_END()`), `0` when
 everything passed; a template or tool problem found before the cases is
 `EXIT_FAILURE` (`1`).  A run over prepared templates reports **2 cases, 0
 failures**: the template guard and the split case.  The guard is the first case,
-but Unity continues after a failed case: a template the guard rejects also fails
-the split case, and the run's exit code is the verdict -- a defect is never a
-false pass.
+but Unity continues after a failed case, so the guard is not a gate: a rejected
+template still reaches the split case. The run's exit code is the verdict.
 
 The runner captures what every tool it spawns prints, on both streams, and
 replays the capture on stderr **only when that tool fails**.  A passing run is
@@ -61,10 +62,9 @@ therefore the unit's own lines and nothing else -- no Unity block per verify
 call, no `temp_inst: ... copied` per position -- and a tool's report of a defect
 still appears above the unit's message for it.
 
-The split case in turn draws its own progress as **one live line per phase**: on
-a terminal the line is rewritten in place while the loop walks the positions, so
-a 2-level template takes one line rather than the ~1065 it prints turns, and the
-phase ends with its verdict:
+The split case draws one live line per template. On a terminal it rewrites
+that line as each instance moves through `split`, `verify` and `remove`, then
+prints both verdicts once every instance has been checked and removed:
 
 ```
     split bptr_files/temp/split/2-*.bptr: PASS
@@ -81,7 +81,7 @@ fails, the turn that failed is finished off before the assertion reports it, so
 a log still says which position died:
 
 ```
-    verify bptr_files/temp/split/2-784.bptr: key 3123
+    verify bptr_files/temp/split/2-784.bptr: key 3123 (position 785/785)
 src/temp_split.c:...:test_full_split:FAIL: failed to verify the instance ...
 ```
 
@@ -115,13 +115,19 @@ A tool that cannot be started is reported as
 `cannot run bin/temp_inst: <errno> (build the tools with 'make')`; a killed child
 as `128 + signal`, and any other failure as `bin/temp_*: exited with status N`.
 
-## Windows
+## Coverage
+
+Counts for levels 1--3 below use the default 512-byte lite layout. Taller-tree
+counts are candidates before duplicate gaps are removed.
 
 | Level | Positions | Verified |
 | --- | --- | --- |
 | 1 | 29 (every one) | leaf split + root created |
 | 2 | 1065 (every one) | leaf split + full root split, every leaf and every insertion position in the root |
-| 3 | 77 (sampled) | leaf split + two cascaded branch splits, each level in each of its insertion cases |
+| 3 | 77 (sampled, original order and duplicates retained) | leaf split + two cascaded branch splits, each level in each of its insertion cases |
+| 4--7 | at most 77 | each pair of branch-level roles, crossed with the three leaf roles, plus both endpoints |
+| 8--32 | at most 377 | the same pairwise coverage using three projection coordinates |
+| 33 and above | `2 + 3 * 5^m`, before deduplication | the same coverage; choose the smallest `m >= 2` with `(5^m - 1) / 4 >= height - 1` |
 
 The list the cases walk is the one `templates_load_dir()` built from the
 directory the caller named (or `TEMPLATES_DEFAULT_DIR`): one entry per
@@ -138,60 +144,108 @@ modifies a copy.
 | `src/templates.{h,c}` | `struct template`, the name convention, the directory scan and `cmp_i64` |
 | `src/tools.{h,c}` | the `posix_spawn` runner (the tool's output is captured and replayed on stderr only when it fails) and the `temp_inst`/`temp_verify` wrappers |
 | `src/progress.{h,c}` | the live progress line of a phase and its verdict: one line rewritten in place on a terminal, the verdicts alone in a redirected run |
-| `src/temp_split.{h,c}` | the `test_full_split` case: where to insert, how to get there |
+| `src/temp_split.{h,c}` | the `test_full_split` case: descend, split, flush/close, verify and remove one instance at a time |
+| `src/split_sampler.{h,c}` | pure sampling and checked key/value arithmetic; independent small-tree and taller-tree strategies |
+| `checks/` | standalone sampler tests, instrumented lifecycle checks and isolated real-tool integration runs |
 | `src/bptr_static.h` | declaration of the `BPTR_STATIC` internals the unit calls |
 
 ## The split case
 
-For every template, the case reads the key lattice (`st`, `interval`) off the
-template's leftmost leaf and then, for every insertion position:
+For every template, the case reads capacities and record count from the loaded
+tree and uses the `st`/`interval` from its name, already checked by the guard.
+It does not assume that a leaf has room for two keys. Before copying any
+instance, it checks full-tree geometry, 64-bit gap arithmetic and that inserted
+keys and doubled values fit `int64_t`, including both endpoints.
+
+For each insertion position, it:
 
 1. copies the pristine template to `bptr_files/temp/split/<lay>-<pos>.bptr`
    with `bin/temp_inst`;
-2. descends to the leaf the inserted key belongs to (`st - interval / 2 + gap *
-   interval`, a key that sorts between two keys of the image);
-3. calls `bptr_node_split` on that leaf and checks that it reports the node it
-   linked the leaf to;
-4. unloads the instance: `bptr_unload` flushes and closes it, and an instance is
-   never verified while the cache still holds it.
+2. descends to the leaf for `st - interval / 2 + gap * interval`;
+3. calls `bptr_node_split` and checks that its return value names the sibling
+   linked to the leaf;
+4. unloads the instance: `bptr_unload` must successfully flush and close it;
+5. hands that file to `bin/temp_verify` with the layout and inserted record,
+   and requires exit 0;
+6. removes the verified instance before copying the next one.
 
-Only after every position of a template has been split and flushed does a second
-loop hand each instance file to `bin/temp_verify` (`--lay-cnt`, `--st`,
-`--interval`, `--key`, `--val`), assert exit 0 and remove it.  There is no
-in-memory verification pass any more: the tool is the verifier, so a defect in
-the split, in the flush of the nodes it touched, or in the header it rewrote is
-seen on the file that was actually written.  The runner captures what the tool
-printed: the `verify` line below is the whole report of a checked instance, and
-the tool's own Unity block is replayed on stderr only for the call that failed.
+This order applies at every height. A clean successful run holds one additional
+instance image at a time. Verification failure preserves that image and stops
+the split case; removal failure also stops it before another copy. A retry
+removes a stale instance when it reaches that same instance name.
 
-Every node of a perfectly full image is full, so the split cascades through
-every level of the template and adds one level: the tool is asked for
-`lay_cnt + 1` levels and tolerates exactly the one inserted record.
+The verifier checks the entire file, including untouched nodes. There is no
+in-memory verification pass: a defect the flush would normalize is outside this
+check. The runner captures the tool's output and replays it on stderr only when
+the tool fails. Progress names the operation, instance, key and sample number;
+a redirected run prints the failing turn before the assertion message.
+
+Every node of a perfectly full image is full, so a leaf split cascades through
+every level and adds a new root. The verifier expects `lay_cnt + 1` levels and
+exactly one additional record.
+
+### Choosing positions
 
 A **position** is the number of existing keys the inserted key sorts after:
-`0` inserts before every key and `record_cnt` behind the last one.  All
-positions are tried while they are affordable.  The 3-level template has ~40 000
-of them and pays a full tree walk each, so it is sampled instead, at the
-positions that put the cascade into each of its cases: a split of a full node
-distributes its keys around the promoted one, and where the new key sorts
-relative to that point (`<`, `==`, `>`) selects a different branch of
-`bptr_node_split` -- at the leaf as well as at every branch level above it.
+`0` inserts before every key and `record_cnt` behind the last one. Heights 1--2
+try every position, lazily. Height 3 retains the original 77-position sequence,
+including its duplicate endpoint: two endpoints followed by the Cartesian
+product of five root roles, five level-1 roles and three leaf roles.
 
-A template the sampler cannot serve is **skipped with a printed notice**: more
-than 3 levels tall, or an `interval` with `interval / 2 == 0` (no key fits
-between two keys of the image).  The skip is never silent, and `test_temp`
-verifies a skipped template like any other, so a directory of tall or dense
-templates still fails loudly when one of them is broken.
+The five branch roles are child indices `0`, `half - 1`, `half`, `half + 1`
+and `brch_up - 1`, where `half = brch_up / 2`. They probe the edges and the
+positions below, at and above the branch promotion point. The leaf roles are
+the last position below its split boundary, the first above it, and the position
+behind its last key.
 
-The case draws one live line per phase -- `split` for the image it just wrote in
-the first loop, `verify` for the check of the flushed instance in the second --
-and replaces it with the verdict of that phase when the loop is through, so a
-defect the tool reports can still be traced to the position under test: the
-replayed report sits on stderr next to the line that named the image, and in a
-redirected run that line is printed before the assertion message.  The case
-writes one instance image per position (up to ~58 MB, all of them removed on the
-way out); a run that a failing case aborts leaves some behind -- the next run
-removes them as it goes.
+Heights >=4 use an independent projection sampler. For `d = height - 1` branch
+levels, choose the smallest `m >= 2` with `(5^m - 1) / 4 >= d`. Assign levels
+lexicographically ordered base-5 coefficient vectors whose first nonzero
+coordinate is 1. Enumerate all `5^m` input vectors; the dot product modulo 5
+selects each level's role. For height 4, for example, the coefficient vectors
+are `(0, 1)`, `(1, 0)` and `(1, 1)`, giving roles `y`, `x` and `x + y` modulo 5.
+
+Any two chosen coefficient vectors are linearly independent modulo 5, so every
+pair of branch levels receives all 25 role combinations. Cross each profile
+with the three leaf positions, prepend both endpoints, and deduplicate gaps in
+first-seen order. Tiny capacities can merge roles; a one-key leaf can receive a
+key before its first key only at the tree's left edge, so coverage refers to
+realizable roles.
+
+Child indices form a number in base `brch_up`, giving the leaf index directly;
+multiplying by leaf capacity and adding its insertion offset gives the gap.
+Sampling never walks existing keys or nodes, and stores only the compact gap
+list. Copying and full-file verification still cost a tree-sized pass per
+sample. For the default lite height-4 layout, the template is about 27.5 MiB:
+keeping 77 instances together would require about 2.1 GiB, while this loop
+requires one instance's space in addition to the template.
+
+An `interval` with `interval / 2 == 0` is still **skipped with a printed notice**,
+and the guard verifies it. Heights above 3 are no longer skipped. Inconsistent
+geometry, overflowing counts or unrepresentable inserted records fail before
+any instance is copied.
+
+### Regression checks
+
+After building, run from the repository root:
+
+```sh
+make -C test/node_split check
+python3 test/node_split/checks/integration.py
+```
+
+`check` runs the standalone sampler binary and eight instrumented lifecycle
+scenarios at heights 1 and 4. The driver treats injected verification, removal
+and unload failures as passing checks only when call ordering, retained-image
+state and stopping behavior match expectations.
+
+The integration script prepares and removes its own fixtures and working
+directories under `.cache/`. It covers heights 1--3, compact lite and normal
+heights 4--5, one-key leaves, compact height 8, and default-size height 4. Real
+tool wrappers prove that each previous instance was removed before the next
+copy, and that an injected verifier failure preserves exactly the failing
+image. It also checks quiet logs, the interval-1 skip and overflow rejection
+before copying. Existing template and instance directories are left untouched.
 
 ## What `temp_verify` checks
 
@@ -218,7 +272,11 @@ distributed the keys differently would still be a valid tree).
   failed allocation) are not covered; with a cache too small to hold the path
   from the root to the leaf the library reports `BPTR_E_CACHE_FULL` and leaves
   the tree unchanged, which no case asserts.
-- A template taller than 3 levels or with `interval / 2 == 0` is only guarded,
-  not split; the notice names it, so the gap is visible in the run.
+- A template with `interval / 2 == 0` is only guarded, not split; the notice
+  names it. Taller trees cover pairwise branch-role projections rather than
+  every possible combination across all levels.
+- Full-file verification and copying remain proportional to tree size per
+  sample. Practical height is limited by file size, library/cache capacity,
+  representable geometry, and the signed key/value range.
 - The unit tests only what it is handed: a shape the caller does not prepare is
   not covered by the run, and an empty directory passes with a warning.

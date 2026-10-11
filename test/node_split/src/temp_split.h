@@ -19,20 +19,19 @@
  *
  * Every node of a perfectly full template is full, so the split of a leaf
  * cascades through every level up to the root and adds one level to the tree.
- * The instance is then flushed and closed, and only after every position of the
- * template has been split is each instance checked from its file by
- * `bin/temp_verify', so that a defect in the split, in the flush of the nodes it
- * touched, or in the header it rewrote cannot hide behind a cache hit.
+ * Each instance is flushed and closed, checked from its file by
+ * `bin/temp_verify', and removed on success before the next copy is made.
+ * Verification failure leaves the image for diagnosis and stops the case.
+ * The flushed file checks defects in splitting, node persistence and headers.
  *
- * A template the sampler cannot serve -- more than 3 levels tall, or an
- * interval that leaves no room for a key between two keys of the image -- is
- * skipped with a notice.  The skip is always printed, so a template the unit
- * cannot split is never dropped silently, and the guard case verifies every
- * template either way.
+ * Heights 1--2 try every gap; height 3 keeps its original role combinations.
+ * Taller trees use an independent compact projection sampler covering pairs
+ * of branch roles crossed with leaf roles, plus both endpoints. It computes
+ * 64-bit gaps from geometry without walking the existing leaf keys.
  *
- * The positions come from `split_gap_at': every one of them for the 1- and
- * 2-level template, and a sample for the 3-level one, which has too many to try
- * them all.
+ * An interval leaving no room between keys is skipped with a printed notice;
+ * the guard case verifies every template either way. Invalid geometry or an
+ * inserted key/value outside the representable range fails before copying.
  */
 void test_full_split(void);
 /* Free the current sample list after a case, including an assertion abort. */
