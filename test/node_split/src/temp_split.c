@@ -138,7 +138,7 @@ void test_full_split(void)
        {
          uint64_t gap = split_sampler_gap_at(&samples, gap_i);
          int64_t k, v;
-         int status, unload_rc;
+         int status, unload_rc, rm_rc;
          bptr_node_t sibling;
 
          split_sampler_kv(st, interval, gap, &k, &v);
@@ -186,35 +186,15 @@ void test_full_split(void)
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->next, sibling, msg);
          bptr_node_unload(bptr, node);
 
-         /* flush and close the instance; what the split left behind is checked
-          * on the file in the second loop, once no instance of this template is
-          * open any more */
+         /* Flush and close before another process reads the image. Keep only
+          * this instance until it has been verified and successfully removed. */
          snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
          unload_rc = bptr_unload(bptr);
          if (unload_rc != BPTR_E_SUCCESS) progress_break();
          TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, unload_rc, msg);
-       }
-      progress_done("    split %s: PASS", pattern);
 
-      /*------- and let the tool check every one of them from the file -------*/
-      for (size_t gap_i = 0; gap_i < gap_cnt; gap_i++)
-       {
-         uint64_t gap = split_sampler_gap_at(&samples, gap_i);
-         int64_t k, v;
-         int status, rm_rc;
-
-         split_sampler_kv(st, interval, gap, &k, &v);
-
-         snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
-                  tmpl->lay_cnt, gap_i);
-         _bptr_path(path, sizeof path, inst);
-         progress_update("    verify %s: key %" PRIi64, path, k);
-
-         /* the split has to be in the file, not just in the cache it was
-          * written through.  Every instance of this template is flushed and
-          * closed by now -- the first loop is over -- so the tool reads the
-          * image from a clean file, and the whole tree, not just the nodes the
-          * split touched, is checked against the shape of the template. */
+         progress_update("    verify %s: key %" PRIi64
+                         " (position %zu/%zu)", path, k, gap_i + 1, gap_cnt);
          status = tools_verify(tmpl->lay_cnt, st, interval, 1, k, v, path);
          if (status != 0) progress_break();
          tools_strstatus(err, sizeof err, TOOLS_TEMP_VERIFY, status);
@@ -222,11 +202,14 @@ void test_full_split(void)
                   path, err);
          TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);
 
+         progress_update("    remove %s: key %" PRIi64
+                         " (position %zu/%zu)", path, k, gap_i + 1, gap_cnt);
          rm_rc = remove(path);
          if (rm_rc != 0) progress_break();
-         TEST_ASSERT_EQUAL_INT_MESSAGE(0, rm_rc,
-                                       "failed to remove the instance");
+         snprintf(msg, sizeof msg, "failed to remove the instance %s", path);
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, rm_rc, msg);
        }
+      progress_done("    split %s: PASS", pattern);
       progress_done("    verify %s: PASS", pattern);
       split_sampler_destroy(&samples);
     }
