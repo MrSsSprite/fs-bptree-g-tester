@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "temp_split.h"
+#include "split_sampler.h"
 #include "templates.h"
 #include "tools.h"
 #include "progress.h"
@@ -24,184 +25,12 @@
 /* the instance images of the cases, relative to `bptr_files/' */
 #define SPLIT_INST_DIR "temp/split/"
 
-/* Roles a branch level of the template is probed at: the two positions below
- * the split point (`<' at the edge and next to it), the split point itself
- * (`=='), and the two above it (`>' next to it and at the edge). */
-#define SPLIT_ROLE_CNT (5u)
-/* Roles of the leaf the insertion lands in: the last position below the leaf
- * split point, the first above it, and the one behind its last key. */
-#define SPLIT_LEAF_CNT (3u)
 /*---------------------------- Private Defines END ----------------------------*/
 
-
-/*------------------------------ Private Structs -----------------------------*/
-/**
- * @brief   Shape of the template a split case starts from
- *
- * Read off the loaded template rather than derived from the request: the node
- * capacity decides where a split lands, and a case must not restate the
- * library's own arithmetic.
- */
-struct split_layout
-{
-   unsigned int lay_cnt;   /* levels of the template */
-   unsigned int leaf_up;   /* `leaf.up': a full leaf holds `leaf_up - 1' keys */
-   unsigned int brch_up;   /* `brch.up': a full node holds `brch_up - 1' keys */
-   uint64_t     rec_cnt;   /* records in the template */
-};
-/*---------------------------- Private Structs END ---------------------------*/
-
+/* Released by tearDown even if a Unity assertion aborts the split case. */
+static struct split_sampler samples;
 
 /*---------------------------- Private Functions -----------------------------*/
-/**
- * @brief   Number of insertion positions a template is split at
- *
- * A position is the number of existing keys the inserted key sorts after, so
- * position 0 puts it before every key of the image and `rec_cnt' behind the
- * last one.
- *
- * A 1- and a 2-level template is tried at every position it has: each insertion
- * splits a full image, so it cascades through the whole height and every node
- * on the way is a candidate for an off-by-one in the position arithmetic.  The
- * 3-level template has ~40 000 positions -- and two full verification walks per
- * insertion -- so it is sampled instead, at the positions that put each level
- * of the cascade into each of its cases (see `split_gap_at').
- *
- * @param[in] lay  shape of the template
- *
- * @return  the number of positions `split_gap_at' answers for
- */
-static size_t split_gap_cnt(const struct split_layout *lay)
-{
-   if (lay->lay_cnt <= 2) return lay->rec_cnt + 1;
-
-   /* the two ends, then one position per (leaf, level-1, root) role triple.
-    * The last leaf's last position is the end of the image, so that one is
-    * tried twice; a repeated position costs one insertion and keeps the
-    * mapping from index to position free of special cases. */
-   return 2 + SPLIT_ROLE_CNT * SPLIT_ROLE_CNT * SPLIT_LEAF_CNT;
-}
-
-
-/**
- * @brief   The number of keys a branch role sorts after
- *
- * An internal node holds `brch_up - 1' keys and `brch_up' children.  A split of
- * a full one promotes its key `brch_up / 2' and leaves `brch_up / 2' keys in
- * the node, so the insertion is a `<' when the new key sorts below that point,
- * a `==' when it is the promoted key itself and a `>' when it sorts above it.
- * The role is also the index of the child the insertion descends into.
- *
- * @param[in] lay   shape of the template
- * @param[in] role  0 .. SPLIT_ROLE_CNT - 1
- *
- * @return  the role's number of keys below the inserted key
- */
-static unsigned int split_role(const struct split_layout *lay,
-                               unsigned int role)
-{
-   unsigned int half = lay->brch_up / 2;
-
-   switch (role)
-    {
-   case 0  : return 0;                   /* in front of every key */
-   case 1  : return half - 1;            /* the last key below the split point */
-   case 2  : return half;                /* the split point */
-   case 3  : return half + 1;            /* the first key above the split point */
-   default : return lay->brch_up - 1;    /* behind every key */
-    }
-}
-
-
-/**
- * @brief   The number of keys a leaf role sorts after
- *
- * A leaf split moves `leaf_up / 2' keys into the new sibling, so the insertion
- * is a `<' when the new key sorts below the key the original node keeps last,
- * and a `>' at and above it.
- *
- * @param[in] lay  shape of the template
- * @param[in] pos  0 .. SPLIT_LEAF_CNT - 1
- *
- * @return  the role's number of keys below the inserted key
- */
-static unsigned int split_leaf_pos(const struct split_layout *lay,
-                                   unsigned int pos)
-{
-   unsigned int last_below = lay->leaf_up - 1 - lay->leaf_up / 2;
-
-   switch (pos)
-    {
-   case 0  : return last_below;          /* the last key below the split point */
-   case 1  : return last_below + 1;      /* the first key above it */
-   default : return lay->leaf_up - 1;    /* behind the last key of the leaf */
-    }
-}
-
-
-/**
- * @brief   The @p idx-th insertion position of a template
- *
- * Every position of a 1- and a 2-level template is its own index.  A 3-level
- * template is sampled: the leaf index a position lands in decides the level-1
- * node the cascade crosses (`leaf / brch_up') and the position inside it
- * (`leaf % brch_up'), and both of those decide where the level-1 node and the
- * root are split; the two ends come first, then one position per triple of
- * (root role, level-1 role, leaf role).
- *
- * @param[in] lay  shape of the template
- * @param[in] idx  position index, below `split_gap_cnt(lay)'
- *
- * @return  the number of existing keys the inserted key sorts after
- */
-static unsigned int split_gap_at(const struct split_layout *lay, size_t idx)
-{
-   unsigned int leaf_mx, leaf_pos, l1_role, root_role, leaf;
-
-   if (lay->lay_cnt <= 2) return (unsigned int)idx;
-
-   if (idx == 0) return 0;
-   if (idx == 1) return (unsigned int)lay->rec_cnt;
-   idx -= 2;
-
-   leaf_pos  = (unsigned int)(idx % SPLIT_LEAF_CNT);
-   idx      /= SPLIT_LEAF_CNT;
-   l1_role   = (unsigned int)(idx % SPLIT_ROLE_CNT);
-   root_role = (unsigned int)(idx / SPLIT_ROLE_CNT);
-
-   leaf_mx = lay->leaf_up - 1;
-   leaf = split_role(lay, root_role) * lay->brch_up + split_role(lay, l1_role);
-   return leaf * leaf_mx + split_leaf_pos(lay, leaf_pos);
-}
-
-
-/**
- * @brief   Fetch the leftmost leaf of a loaded template
- *
- * Walks down the first child of every node from the root.  The first keys of
- * that leaf are the key lattice of the image: `st' and the `interval' every
- * insertion position is built from.
- *
- * @param[in] self  loaded tree
- *
- * @return  the leftmost leaf, still loaded; NULL when a node cannot be fetched
- */
-static struct bptr_node *split_leftmost_leaf(struct bptr *self)
-{
-   struct bptr_node *node = bptr_node_fetch(self, self->root_idx);
-
-   while (node != NULL && node->level != 0)
-    {
-      struct bptr_node *child =
-         bptr_node_fetch(self, _node_brch_vals_get(self, node, 0));
-      bptr_node_unload(self, node);
-      node = child;
-    }
-
-   return node;
-}
-
-
 /**
  * @brief   Fetch the leaf an inserted key belongs to
  *
@@ -252,19 +81,12 @@ void test_full_split(void)
       struct split_layout lay;
       struct bptr *bptr;
       struct bptr_node *node;
-      int64_t st, interval, half;
+      int64_t st = tmpl->st, interval = tmpl->interval, k, v;
+      unsigned int height;
+      int sample_rc, unload_rc;
       size_t gap_cnt;
 
-      /* the sampler below is written for a leaf level and two branch levels,
-       * and an inserted key has to fit between two keys of the image: a
-       * template the unit cannot split is skipped with a notice, never dropped
-       * silently */
-      if (tmpl->lay_cnt > 3)
-       {
-         printf("  skip %s: %u levels is more than the sampler covers\n",
-                tmpl->path, tmpl->lay_cnt);
-         continue;
-       }
+      /* An inserted key has to fit between two keys of the image. */
       if (tmpl->interval / 2 == 0)
        {
          printf("  skip %s: interval %" PRIi64 " leaves no room between two "
@@ -278,27 +100,31 @@ void test_full_split(void)
       bptr = bptr_load(tmpl->path, SPLIT_CACHE_CAP, &cmp_i64);
       TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
 
-      node = split_leftmost_leaf(bptr);
-      TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch the leftmost leaf");
-      st = ((int64_t*)node->keys)[0];
-      interval = ((int64_t*)node->keys)[1] - st;
-      half = interval / 2;
       lay.lay_cnt = tmpl->lay_cnt;
       lay.leaf_up = (unsigned int)bptr->node_bound.leaf.up;
       lay.brch_up = (unsigned int)bptr->node_bound.brch.up;
       lay.rec_cnt = bptr->record_cnt;
-      bptr_node_unload(bptr, node);
+      height = bptr->height;
+      snprintf(msg, sizeof msg, "failed to unload the template %s", tmpl->path);
+      unload_rc = bptr_unload(bptr);
+      TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, unload_rc, msg);
+      TEST_ASSERT_EQUAL_UINT_MESSAGE(lay.lay_cnt, height,
+                                     "template height does not match its name");
 
-      /* an inserted key has to fit between two keys of the template, or the
-       * split would be handed a key the image already holds */
-      snprintf(msg, sizeof msg, "%s: interval %" PRIi64 " leaves no room "
-               "between two keys", tmpl->path, interval);
-      TEST_ASSERT_NOT_EQUAL_INT64_MESSAGE(0, half, msg);
-      snprintf(msg, sizeof msg, "failed to unload the template %s",
-               tmpl->path);
-      TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr), msg);
+      sample_rc = split_sampler_init(&samples, &lay);
+      snprintf(msg, sizeof msg, "%s: %s", tmpl->path,
+               split_sampler_strerror(sample_rc));
+      TEST_ASSERT_EQUAL_INT_MESSAGE(SPLIT_SAMPLE_OK, sample_rc, msg);
+      /* All gaps are between these endpoints, and the lattice ascends. Check
+       * both extrema before copying anything, including the doubled values. */
+      sample_rc = split_sampler_kv(st, interval, 0, &k, &v);
+      if (sample_rc == SPLIT_SAMPLE_OK)
+         sample_rc = split_sampler_kv(st, interval, lay.rec_cnt, &k, &v);
+      snprintf(msg, sizeof msg, "%s: %s", tmpl->path,
+               split_sampler_strerror(sample_rc));
+      TEST_ASSERT_EQUAL_INT_MESSAGE(SPLIT_SAMPLE_OK, sample_rc, msg);
 
-      gap_cnt = split_gap_cnt(&lay);
+      gap_cnt = split_sampler_count(&samples);
       printf("  %zu positions: %u keys per leaf, %u children and %u keys per "
              "node, %" PRIu64 " records\n", gap_cnt, lay.leaf_up - 1,
              lay.brch_up, lay.brch_up - 1, lay.rec_cnt);
@@ -310,16 +136,19 @@ void test_full_split(void)
       /*-------- split one fresh copy of the template per position ----------*/
       for (size_t gap_i = 0; gap_i < gap_cnt; gap_i++)
        {
-         unsigned int gap = split_gap_at(&lay, gap_i);
-         int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
+         uint64_t gap = split_sampler_gap_at(&samples, gap_i);
+         int64_t k, v;
          int status, unload_rc;
          bptr_node_t sibling;
+
+         split_sampler_kv(st, interval, gap, &k, &v);
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
                   tmpl->lay_cnt, gap_i);
          _bptr_path(path, sizeof path, inst);
          progress_update("    split %s: key %" PRIi64 " (position %zu/%zu, "
-                         "%u keys below it)", path, k, gap_i + 1, gap_cnt, gap);
+                         "%" PRIu64 " keys below it)", path, k,
+                         gap_i + 1, gap_cnt, gap);
 
          /* a run that a failing case aborted leaves instances behind, and the
           * copy refuses to overwrite a file that already exists */
@@ -370,9 +199,11 @@ void test_full_split(void)
       /*------- and let the tool check every one of them from the file -------*/
       for (size_t gap_i = 0; gap_i < gap_cnt; gap_i++)
        {
-         unsigned int gap = split_gap_at(&lay, gap_i);
-         int64_t k = st - half + (int64_t)gap * interval, v = k * 2;
+         uint64_t gap = split_sampler_gap_at(&samples, gap_i);
+         int64_t k, v;
          int status, rm_rc;
+
+         split_sampler_kv(st, interval, gap, &k, &v);
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
                   tmpl->lay_cnt, gap_i);
@@ -397,6 +228,11 @@ void test_full_split(void)
                                        "failed to remove the instance");
        }
       progress_done("    verify %s: PASS", pattern);
+      split_sampler_destroy(&samples);
     }
 }
 /*------------------------------ Test Units END ------------------------------*/
+
+/* The runner invokes this after a successful or aborted case. */
+void temp_split_cleanup(void)
+{ split_sampler_destroy(&samples); }

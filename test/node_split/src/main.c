@@ -12,7 +12,7 @@
 /*------------------------------- Unity Setup --------------------------------*/
 void setUp(void) { }
 
-void tearDown(void) { }
+void tearDown(void) { temp_split_cleanup(); }
 /*----------------------------- Unity Setup END ------------------------------*/
 
 void test_temp(void);

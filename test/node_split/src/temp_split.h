@@ -35,6 +35,8 @@
  * them all.
  */
 void test_full_split(void);
+/* Free the current sample list after a case, including an assertion abort. */
+void temp_split_cleanup(void);
 /*--------------------------- Public Functions END ---------------------------*/
 
 #endif
