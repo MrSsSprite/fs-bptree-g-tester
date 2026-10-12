@@ -24,18 +24,20 @@ From the repository root, as everything in this repo is run:
 ```sh
 make            # every directory under test/ and utils/: three units + three tools
 make temp       # this utility alone
-make -C utils/temp check  # pointer preflight boundaries and CLI regressions
-make -C utils/temp check-kv   # executable key/value overflow regression tests
+make -C utils/temp check  # all overflow boundaries and CLI regressions
 ```
 
 `utils/temp/Makefile` includes `config.mk`, so the tools are compiled with the
 same flags as a unit and link the same `obj/core/*.o` objects.  Only
 `temp_verify` links Unity: its check is `temp_full_verify`, which asserts.
 
-`check-kv` requires Python 3 and checks generated record bytes at the signed
-value boundaries, rejection before directory creation or reuse, large layout
-arithmetic, and the unused step after the final key.  Set `TEMP_GEN` to test
-another generator binary, such as one built with integer overflow sanitizers.
+`check` requires Python 3 and runs the C pointer/file-offset boundary tests and
+both executable regression suites.  They cover generated record bytes at the
+signed value boundaries, pointer and file-offset limits, rejection before
+directory creation or reuse, large layout arithmetic, the unused step after
+the final key, and small template generation, verification and reuse.  Set
+`TEMP_GEN` to test another generator binary in the key/value suite, such as one
+built with integer overflow sanitizers.
 
 ## Name convention
 
