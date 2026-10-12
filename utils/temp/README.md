@@ -105,6 +105,24 @@ key of the refused lattice and the two requests hold the same keys.  The numbers
 are printed only when they can be computed: a layout that holds no tree, or an
 `int64_t` overflow, falls back to the symbolic recipe.
 
+Before creating directories or a template file, or reusing an existing image,
+the generator checks the first key, the largest generated key
+`ST + INTERVAL * (record_cnt - 1)`, and the range of their doubled values.
+The count and endpoint calculations are bounded before each multiplication,
+so the checks themselves cannot overflow.  An overflowing request exits 1
+without creating a template and reports:
+
+```
+temp_full_generate: key/value overflow: generated keys or doubled values exceed int64_t
+```
+
+The limits are inclusive: a generated value may equal `INT64_MIN`, and the
+largest possible doubled value is `INT64_MAX - 1`.  The unused interval step
+after the final key need not fit.  These checks guarantee only that key/value
+arithmetic during template generation does not overflow; they reserve no
+capacity for later insertions or splits.  Users are responsible for ensuring
+that their subsequent use of the template does not overflow.
+
 | Exit | Meaning |
 | --- | --- |
 | 0 | the template exists |

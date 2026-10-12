@@ -43,6 +43,8 @@ static _Bool _gen_ascending(unsigned int lay_cnt, int64_t st, int64_t interval,
                             int64_t *asc_st, int64_t *asc_interval);
 static _Bool _gen_record_cnt(unsigned int lay_cnt, _Bool is_lite,
                              uint32_t node_size, int64_t *rec_cnt);
+static _Bool _gen_kv_fits(unsigned int lay_cnt, int64_t st, int64_t interval,
+                          _Bool is_lite, uint32_t node_size);
 static int _fixture_matches(const char *path, unsigned int lay_cnt,
                             _Bool is_lite, uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
@@ -96,8 +98,9 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  * @param[in] node_size  size of a node in bytes
  *
  * @return  TEMP_FULL_OK (0) on success; TEMP_FULL_E_LAY_CNT,
- *          TEMP_FULL_E_NODE_SIZE or TEMP_FULL_E_INTERVAL (negative: the request
- *          cannot be served) or a positive environment error otherwise.  An
+ *          TEMP_FULL_E_NODE_SIZE, TEMP_FULL_E_INTERVAL or
+ *          TEMP_FULL_E_KV_OVERFLOW (negative: the request cannot be served) or
+ *          a positive environment error otherwise.  An
  *          error is named by `temp_full_strerror' and reported on stderr with
  *          the path being worked on, once there is one: the template directory
  *          first, then the template path.
@@ -110,6 +113,12 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  *          touched -- and it names the ascending request that builds the same
  *          keys: `interval * -1', starting at `st + interval * (record_cnt - 1)',
  *          the last key of the descending lattice.
+ * @note    Key/value overflow is checked before any directory or file is
+ *          touched, including reuse.  The first and last keys and their doubled
+ *          values may reach the int64_t limits; no space is reserved for later
+ *          insertions or splits.  This guarantees key/value arithmetic during
+ *          generation only: callers must ensure their later use of the template
+ *          does not overflow.
  * @note    Returns TEMP_FULL_OK without touching a file that already exists and
  *          matches the requested layout; a file that does not match, be it a
  *          partial image left by an interrupted run or one built with other
@@ -159,6 +168,8 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
       _gen_report_interval(lay_cnt, st, interval, is_lite, node_size);
       return TEMP_FULL_E_INTERVAL;
     }
+   if (!_gen_kv_fits(lay_cnt, st, interval, is_lite, node_size))
+      return _gen_fail(TEMP_FULL_E_KV_OVERFLOW, NULL);
 
    temp_full_path(path, sizeof path, dir, lay_cnt, st, interval);
    if (_ensure_par_dirs(path, 0755) == -1)
@@ -249,6 +260,8 @@ const char *temp_full_strerror(int status)
    case TEMP_FULL_E_NODE_SIZE  : return "node_size out of range";
    case TEMP_FULL_E_INTERVAL   : return "interval is negative: a template's "
                                         "keys must ascend";
+   case TEMP_FULL_E_KV_OVERFLOW: return "key/value overflow: generated keys or "
+                                        "doubled values exceed int64_t";
    case TEMP_FULL_E_FIXTURE    : return "not a complete template of this layout; "
                                         "delete it and retry";
    case TEMP_FULL_E_UNREADABLE : return "cannot be read";
@@ -319,8 +332,11 @@ static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
                             int64_t *st, int64_t interval)
 {
    for (uint32_t k_mx = self->node_bound.leaf.up - 1;
-        node->key_count < k_mx; node->key_count++, *st += interval)
+        node->key_count < k_mx; node->key_count++)
     {
+      /* Advance only when another key is actually needed.  The unused step
+       * after the final key need not fit, even for a valid template. */
+      if (self->record_cnt != 0 || node->key_count != 0) *st += interval;
       ((int64_t*)node->keys)[node->key_count] = *st;
       ((int64_t*)node->vals)[node->key_count] = *st * 2;
     }
@@ -699,5 +715,52 @@ static _Bool _gen_record_cnt(unsigned int lay_cnt, _Bool is_lite,
 
    *rec_cnt = (int64_t)cnt;
    return 1;
+}
+
+
+/**
+ * @brief   Check the largest generated key and both value range endpoints
+ *
+ * Called only after layout validation and the negative-interval refusal.  The
+ * layout arithmetic mirrors `_gen_record_cnt', but bounds the count by the
+ * number of records the requested lattice can hold, rather than multiplying
+ * an arbitrarily tall tree first.  Every product is checked by division before
+ * it is evaluated, so the preflight itself cannot overflow.
+ *
+ * Values are twice their keys.  With a nonnegative interval, the first key
+ * determines the minimum value and the last key the maximum value.  The
+ * allowed key range is [INT64_MIN / 2, INT64_MAX / 2], inclusive.  A zero
+ * interval repeats one key, so its key/value range is independent of the
+ * record count (node/pointer limits are a separate concern).
+ */
+static _Bool _gen_kv_fits(unsigned int lay_cnt, int64_t st, int64_t interval,
+                          _Bool is_lite, uint32_t node_size)
+{
+   uint64_t rem_sz, ptr_size, brch_up, rec_cnt, max_delta, max_records;
+   int64_t largest;
+
+   if (st < INT64_MIN / 2 || st > INT64_MAX / 2) return 0;
+   if (interval == 0) return 1;
+
+   /* The distance between the allowed key endpoints is INT64_MAX.  Unsigned
+    * subtraction also handles a negative start without signed overflow. */
+   max_delta = (uint64_t)(INT64_MAX / 2) - (uint64_t)st;
+   max_records = max_delta / (uint64_t)interval + 1u;
+   rem_sz = (uint64_t)node_size - BPTR_NODE_METADATA_BYTE;
+   ptr_size = is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE;
+   brch_up = (rem_sz - ptr_size) /
+             ((uint64_t)sizeof (int64_t) + ptr_size) + 1u;
+   rec_cnt = rem_sz / (2u * (uint64_t)sizeof (int64_t));
+   if (rec_cnt > max_records) return 0;
+   for (unsigned int level = 1; level < lay_cnt; level++)
+    {
+      if (rec_cnt > max_records / brch_up) return 0;
+      rec_cnt *= brch_up;
+    }
+
+   /* The bounded count proves this product <= max_delta <= INT64_MAX,
+    * and adding it to st stays inside the allowed key range. */
+   largest = st + (int64_t)((rec_cnt - 1u) * (uint64_t)interval);
+   return largest <= INT64_MAX / 2;
 }
 /*-------------------------- Private Functions END ---------------------------*/
