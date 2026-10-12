@@ -3,6 +3,7 @@
 #include "temp_internal.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
+#include "bptr_io.h"
 #include <string.h>
 #include <limits.h>
 #include <errno.h>
@@ -43,6 +44,10 @@ static _Bool _gen_ascending(unsigned int lay_cnt, int64_t st, int64_t interval,
                             int64_t *asc_st, int64_t *asc_interval);
 static _Bool _gen_record_cnt(unsigned int lay_cnt, _Bool is_lite,
                              uint32_t node_size, int64_t *rec_cnt);
+static _Bool _gen_node_count_fits(unsigned int lay_cnt, uint64_t fanout,
+                                 uint64_t limit);
+static int _gen_check_pointers(unsigned int lay_cnt, _Bool is_lite,
+                               uint32_t node_size);
 static int _fixture_matches(const char *path, unsigned int lay_cnt,
                             _Bool is_lite, uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
@@ -96,8 +101,9 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  * @param[in] node_size  size of a node in bytes
  *
  * @return  TEMP_FULL_OK (0) on success; TEMP_FULL_E_LAY_CNT,
- *          TEMP_FULL_E_NODE_SIZE or TEMP_FULL_E_INTERVAL (negative: the request
- *          cannot be served) or a positive environment error otherwise.  An
+ *          TEMP_FULL_E_NODE_SIZE, TEMP_FULL_E_INTERVAL or
+ *          TEMP_FULL_E_PTR_OVERFLOW (negative: the request cannot be served)
+ *          or a positive environment error otherwise.  An
  *          error is named by `temp_full_strerror' and reported on stderr with
  *          the path being worked on, once there is one: the template directory
  *          first, then the template path.
@@ -110,6 +116,11 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  *          touched -- and it names the ascending request that builds the same
  *          keys: `interval * -1', starting at `st + interval * (record_cnt - 1)',
  *          the last key of the descending lattice.
+ * @note    Pointer and file-offset overflow are refused before a directory is
+ *          created or an existing template is reused.  The checks cover this
+ *          generation only, including the header block, and allow exact maxima.
+ *          Users must ensure their later operations on a template do not
+ *          overflow; no headroom is reserved for an insertion or split.
  * @note    Returns TEMP_FULL_OK without touching a file that already exists and
  *          matches the requested layout; a file that does not match, be it a
  *          partial image left by an interrupted run or one built with other
@@ -159,6 +170,9 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
       _gen_report_interval(lay_cnt, st, interval, is_lite, node_size);
       return TEMP_FULL_E_INTERVAL;
     }
+
+   status = _gen_check_pointers(lay_cnt, is_lite, node_size);
+   if (status != TEMP_FULL_OK) return status;
 
    temp_full_path(path, sizeof path, dir, lay_cnt, st, interval);
    if (_ensure_par_dirs(path, 0755) == -1)
@@ -249,6 +263,8 @@ const char *temp_full_strerror(int status)
    case TEMP_FULL_E_NODE_SIZE  : return "node_size out of range";
    case TEMP_FULL_E_INTERVAL   : return "interval is negative: a template's "
                                         "keys must ascend";
+   case TEMP_FULL_E_PTR_OVERFLOW: return "template node pointers or file "
+                                        "offsets would overflow";
    case TEMP_FULL_E_FIXTURE    : return "not a complete template of this layout; "
                                         "delete it and retry";
    case TEMP_FULL_E_UNREADABLE : return "cannot be read";
@@ -272,6 +288,75 @@ int cmp_i64(const void *lhs, const void *rhs)
 
 
 /*---------------------------- Private Functions -----------------------------*/
+/**
+ * The perfect tree has 1 + fanout + ... + fanout^(lay_cnt - 1) nodes.
+ * Horner's recurrence avoids computing a power or overflowing a sum: test the
+ * next `count * fanout + 1' against the inclusive limit before either operation.
+ * Callers supply a positive height and fanout, as enforced by layout validation.
+ */
+static _Bool _gen_node_count_fits(unsigned int lay_cnt, uint64_t fanout,
+                                 uint64_t limit)
+{
+   uint64_t count = 1;
+
+   if (limit == 0) return 0;
+   for (unsigned int level = 1; level < lay_cnt; level++)
+    {
+      if (count > (limit - 1u) / fanout) return 0;
+      count = count * fanout + 1u;
+    }
+   return 1;
+}
+
+
+/**
+ * Validate only the nodes and bytes this generation will write.  Node indices
+ * start at 1 (block 0 is the header), so the largest child/parent/sibling pointer
+ * and the header node count are both the total node count.  A maximum pointer
+ * is valid; no space is reserved for a later split or insertion.
+ *
+ * File I/O uses signed bptr_off_t positions.  The final file position includes
+ * the header block and must fit too: `(node_count + 1) * node_size <= off_max'.
+ * Divide first to derive the node limit without overflowing either operation.
+ * Limit to uint64_t even if a platform has wider offsets, since the library's
+ * node-index multiplication must also fit that unsigned type.
+ */
+static int _gen_check_pointers(unsigned int lay_cnt, _Bool is_lite,
+                               uint32_t node_size)
+{
+   uint64_t ptr_size = is_lite ? BPTR_LITE_PTR_BYTE : BPTR_NORM_PTR_BYTE,
+            fanout = ((uint64_t)node_size - BPTR_NODE_METADATA_BYTE - ptr_size) /
+                     (sizeof (int64_t) + ptr_size) + 1u,
+            ptr_max = is_lite ? UINT32_MAX : UINT64_MAX,
+            off_max = UINT64_MAX,
+            block_limit;
+
+   if (!_gen_node_count_fits(lay_cnt, fanout, ptr_max))
+    {
+      (void)_gen_fail(TEMP_FULL_E_PTR_OVERFLOW, NULL);
+      fprintf(stderr, "temp_full_generate: node count exceeds the %u-bit "
+                      "node-index pointer maximum\n", (unsigned int)ptr_size * 8u);
+      return TEMP_FULL_E_PTR_OVERFLOW;
+    }
+
+   /* A shift by the width of uint64_t is avoided, including on platforms with
+    * offsets wider than 64 bits.  bptr_off_t is signed on every supported port. */
+   if (sizeof (bptr_off_t) * CHAR_BIT <= 64u)
+      off_max >>= 64u - (sizeof (bptr_off_t) * CHAR_BIT - 1u);
+   block_limit = off_max / node_size;
+   if (block_limit == 0 ||
+       !_gen_node_count_fits(lay_cnt, fanout, block_limit - 1u))
+    {
+      (void)_gen_fail(TEMP_FULL_E_PTR_OVERFLOW, NULL);
+      fprintf(stderr, "temp_full_generate: template file size, including its "
+                      "header block, exceeds the file-offset maximum %" PRIu64
+                      " bytes\n", off_max);
+      return TEMP_FULL_E_PTR_OVERFLOW;
+    }
+   return TEMP_FULL_OK;
+}
+
+
 /**
  * @brief   Create every parent directory of @p path
  *

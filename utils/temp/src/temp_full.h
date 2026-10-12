@@ -25,6 +25,7 @@
 #define TEMP_FULL_E_LAY_CNT    (-1) /* lay_cnt is 0 or taller than the node cache */
 #define TEMP_FULL_E_NODE_SIZE  (-2) /* node_size cannot hold a full node */
 #define TEMP_FULL_E_INTERVAL   (-3) /* interval is negative: the keys must ascend */
+#define TEMP_FULL_E_PTR_OVERFLOW (-5) /* node indices or file offsets cannot fit */
 #define TEMP_FULL_E_FIXTURE    (1)  /* an existing file is not this fixture */
 #define TEMP_FULL_E_UNREADABLE (2)  /* an existing file cannot be read */
 #define TEMP_FULL_E_DIR        (3)  /* the fixture directory cannot be created */
@@ -80,6 +81,13 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  *          A negative `interval' is refused as TEMP_FULL_E_INTERVAL before a
  *          path is built, so no directory and no file is touched, and the
  *          refusal names the ascending request that builds the same keys.
+ *          TEMP_FULL_E_PTR_OVERFLOW refuses a template whose total node count
+ *          cannot fit the selected pointer width, or whose full file size
+ *          (including block 0) cannot fit the library's file-offset type.
+ *          These checks happen before creating directories or consulting an
+ *          existing template.  Exact maxima are valid; no headroom for later
+ *          operations is reserved.  Users must ensure their later insertions,
+ *          splits or other uses of the template do not overflow.
  */
 int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
                        int64_t interval, _Bool is_lite, uint32_t node_size);

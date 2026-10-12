@@ -86,6 +86,22 @@ temp_gen: <path>: reused
 `: reused` means a complete template of that layout was already there and was
 left untouched.
 
+Before creating directories or creating/reusing an image, the generator counts
+the perfect tree's nodes as `1 + brch.up + ... + brch.up^(LAY_CNT - 1)`.
+It refuses a count above `UINT32_MAX` in lite mode or `UINT64_MAX` in normal
+mode. Child pointers (the values of internal nodes), parent and sibling pointers
+store **node indices**, not byte offsets; block 0 is the header, so the largest
+node index is the total node count. It also refuses a full file size
+`(node_count + 1) * node_size` above the library's signed file-offset maximum
+(normally `INT64_MAX`), including the header block and final file position.
+The preflight arithmetic itself uses division guards to avoid overflow and
+reports whether the node-index range or file-offset range would be exceeded.
+
+These checks guarantee representability only for generating this template.
+Reaching a maximum exactly is valid: no spare nodes or space are required for
+later insertions or splits. Users are responsible for ensuring that their
+subsequent operations on a template do not overflow.
+
 A negative `INTERVAL` is refused: the keys of a template have to ascend, because
 the split of a full node and the verifier both search a node in the comparator's
 order, so a descending lattice is not a tree they can serve.  The refusal happens
