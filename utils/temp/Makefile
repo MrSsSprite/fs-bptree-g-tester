@@ -10,7 +10,7 @@ TU_OBJ_DIR := $(OBJ_DIR)/utils/$(TU_NAME)
 TARGETS := temp_gen temp_inst temp_verify
 BINS    := $(addprefix $(BIN_DIR)/, $(TARGETS))
 
-.PHONY: all check clean
+.PHONY: all check check-kv clean
 
 all: $(BINS)
 
@@ -23,6 +23,9 @@ $(TU_OBJ_DIR)/test_pointer_limits: test/pointer_limits.c src/temp_full.c \
                                  src/temp_full.h $(CORE_OBJS)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $< $(CORE_OBJS) -o $@
+
+check-kv: $(BIN_DIR)/temp_gen
+	python3 tests/test_kv_overflow.py
 
 # `temp_full.o' is the generator, the name convention, the status names and the
 # parent directory helper every tool shares; the library objects are the same

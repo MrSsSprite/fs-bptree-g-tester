@@ -25,6 +25,7 @@
 #define TEMP_FULL_E_LAY_CNT    (-1) /* lay_cnt is 0 or taller than the node cache */
 #define TEMP_FULL_E_NODE_SIZE  (-2) /* node_size cannot hold a full node */
 #define TEMP_FULL_E_INTERVAL   (-3) /* interval is negative: the keys must ascend */
+#define TEMP_FULL_E_KV_OVERFLOW (-4) /* a generated key or doubled value overflows */
 #define TEMP_FULL_E_PTR_OVERFLOW (-5) /* node indices or file offsets cannot fit */
 #define TEMP_FULL_E_FIXTURE    (1)  /* an existing file is not this fixture */
 #define TEMP_FULL_E_UNREADABLE (2)  /* an existing file cannot be read */
@@ -88,6 +89,12 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  *          existing template.  Exact maxima are valid; no headroom for later
  *          operations is reserved.  Users must ensure their later insertions,
  *          splits or other uses of the template do not overflow.
+ *          Generated keys and their doubled values must fit int64_t;
+ *          TEMP_FULL_E_KV_OVERFLOW refuses overflow before any directory/file
+ *          creation or reuse.  The checks themselves cannot overflow.  Bounds
+ *          are inclusive and guarantee key/value arithmetic during generation
+ *          only, with no reserve for future operations.  Callers must ensure
+ *          their subsequent use of a template does not overflow.
  */
 int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
                        int64_t interval, _Bool is_lite, uint32_t node_size);

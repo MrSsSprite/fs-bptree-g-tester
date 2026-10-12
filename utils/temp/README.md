@@ -25,11 +25,17 @@ From the repository root, as everything in this repo is run:
 make            # every directory under test/ and utils/: three units + three tools
 make temp       # this utility alone
 make -C utils/temp check  # pointer preflight boundaries and CLI regressions
+make -C utils/temp check-kv   # executable key/value overflow regression tests
 ```
 
 `utils/temp/Makefile` includes `config.mk`, so the tools are compiled with the
 same flags as a unit and link the same `obj/core/*.o` objects.  Only
 `temp_verify` links Unity: its check is `temp_full_verify`, which asserts.
+
+`check-kv` requires Python 3 and checks generated record bytes at the signed
+value boundaries, rejection before directory creation or reuse, large layout
+arithmetic, and the unused step after the final key.  Set `TEMP_GEN` to test
+another generator binary, such as one built with integer overflow sanitizers.
 
 ## Name convention
 
@@ -121,6 +127,24 @@ leaf over `brch.up^(lay_cnt - 1)` leaves -- so the suggested start is the last
 key of the refused lattice and the two requests hold the same keys.  The numbers
 are printed only when they can be computed: a layout that holds no tree, or an
 `int64_t` overflow, falls back to the symbolic recipe.
+
+Before creating directories or a template file, or reusing an existing image,
+the generator checks the first key, the largest generated key
+`ST + INTERVAL * (record_cnt - 1)`, and the range of their doubled values.
+The count and endpoint calculations are bounded before each multiplication,
+so the checks themselves cannot overflow.  An overflowing request exits 1
+without creating a template and reports:
+
+```
+temp_full_generate: key/value overflow: generated keys or doubled values exceed int64_t
+```
+
+The limits are inclusive: a generated value may equal `INT64_MIN`, and the
+largest possible doubled value is `INT64_MAX - 1`.  The unused interval step
+after the final key need not fit.  These checks guarantee only that key/value
+arithmetic during template generation does not overflow; they reserve no
+capacity for later insertions or splits.  Users are responsible for ensuring
+that their subsequent use of the template does not overflow.
 
 | Exit | Meaning |
 | --- | --- |
