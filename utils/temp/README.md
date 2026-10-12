@@ -24,6 +24,7 @@ From the repository root, as everything in this repo is run:
 ```sh
 make            # every directory under test/ and utils/: three units + three tools
 make temp       # this utility alone
+make -C utils/temp check  # pointer preflight boundaries and CLI regressions
 ```
 
 `utils/temp/Makefile` includes `config.mk`, so the tools are compiled with the
