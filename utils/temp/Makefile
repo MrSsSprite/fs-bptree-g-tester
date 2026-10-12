@@ -10,9 +10,12 @@ TU_OBJ_DIR := $(OBJ_DIR)/utils/$(TU_NAME)
 TARGETS := temp_gen temp_inst temp_verify
 BINS    := $(addprefix $(BIN_DIR)/, $(TARGETS))
 
-.PHONY: all clean
+.PHONY: all clean check-kv
 
 all: $(BINS)
+
+check-kv: $(BIN_DIR)/temp_gen
+	python3 tests/test_kv_overflow.py
 
 # `temp_full.o' is the generator, the name convention, the status names and the
 # parent directory helper every tool shares; the library objects are the same
