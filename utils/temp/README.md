@@ -24,7 +24,7 @@ From the repository root, as everything in this repo is run:
 ```sh
 make            # every directory under test/ and utils/: three units + three tools
 make temp       # this utility alone
-make -C utils/temp check  # all overflow boundaries and CLI regressions
+make -C utils/temp check  # overflow boundaries and generator/verifier regressions
 ```
 
 `utils/temp/Makefile` includes `config.mk`, so the tools are compiled with the
@@ -32,12 +32,15 @@ same flags as a unit and link the same `obj/core/*.o` objects.  Only
 `temp_verify` links Unity: its check is `temp_full_verify`, which asserts.
 
 `check` requires Python 3 and runs the C pointer/file-offset boundary tests and
-both executable regression suites.  They cover generated record bytes at the
+the executable regression suites.  They cover generated record bytes at the
 signed value boundaries, pointer and file-offset limits, rejection before
 directory creation or reuse, large layout arithmetic, the unused step after
 the final key, and small template generation, verification and reuse.  Set
 `TEMP_GEN` to test another generator binary in the key/value suite, such as one
-built with integer overflow sanitizers.
+built with integer overflow sanitizers. The verifier suite covers missing and
+duplicate inserted records, including duplicates across leaf boundaries, and
+incorrect physical/header record totals in both lite and normal layouts. Set
+`TEMP_VERIFY` to run that suite against another verifier binary.
 
 ## Name convention
 
@@ -197,7 +200,12 @@ from the image itself.  The lattice may start at any key `ST`, not only at 0;
 an `INTERVAL` of 0 is a parameter error (exit 2) because a lattice cannot step
 by nothing.  `--key`/`--val` (both or neither) tell the checker that one record
 was inserted -- how a split instance is checked: it then expects `lay_cnt + 1`
-levels and tolerates exactly that one record.
+levels and requires that record exactly once. Independently, it sums every
+leaf's record count and checks the physical total and the header record count
+against `(leaf.up - 1) * brch.up^(LAY_CNT - 1)`, plus one when an inserted record
+is expected. Computing that expected total uses checked arithmetic and does
+not depend on the number of leaves visited, the key lattice walk or the header
+record count.
 
 The name is read as three decimal numbers, so a spelling the generator would
 never write -- `01-0-16.bptr` -- is accepted as well.  A caller that needs the
