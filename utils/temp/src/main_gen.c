@@ -40,6 +40,7 @@ int main(int argc, char **argv)
    int64_t st, interval;
    char path[PATH_MAX];
    struct stat fst;
+   struct temp_shape shape = {0};
    _Bool was_there;
    int at, status;
 
@@ -52,10 +53,10 @@ int main(int argc, char **argv)
       const char *arg = argv[at];
 
       if (!strcmp(arg, "-h") || !strcmp(arg, "--help"))
-       { usage(stdout, argv[0]); return GEN_EXIT_OK; }
+       { usage(stdout, argv[0]); temp_shape_free(&shape); return GEN_EXIT_OK; }
       else if (!strcmp(arg, "--dir"))
        {
-         if (++at == argc) { usage(stderr, argv[0]); return GEN_EXIT_USAGE; }
+         if (++at == argc) { goto USAGE; }
          dir = argv[at];
        }
       else if (!strcmp(arg, "--norm"))
@@ -63,7 +64,12 @@ int main(int argc, char **argv)
       else if (!strcmp(arg, "--node-size"))
        {
          if (++at == argc || !_parse_u32(argv[at], &node_size))
-          { usage(stderr, argv[0]); return GEN_EXIT_USAGE; }
+          { goto USAGE; }
+       }
+      else if (!strcmp(arg, "--node-keys"))
+       {
+         if (++at == argc || temp_shape_add(&shape, argv[at]) != 0)
+            goto USAGE;
        }
       else
          break;
@@ -72,27 +78,33 @@ int main(int argc, char **argv)
        !_parse_u32(argv[at], &lay_cnt) ||
        !_parse_i64(argv[at + 1], &st) ||
        !_parse_i64(argv[at + 2], &interval))
-    { usage(stderr, argv[0]); return GEN_EXIT_USAGE; }
+    { goto USAGE; }
 
    if (dir != NULL && *dir == '\0')
-    { usage(stderr, argv[0]); return GEN_EXIT_USAGE; }
+    { goto USAGE; }
    if (dir == NULL)
     {
       dir = TEMP_FULL_DEFAULT_DIR;
       printf("temp_gen: no --dir given; using the default %s\n", dir);
     }
 
-   temp_full_path(path, sizeof path, dir, lay_cnt, st, interval);
+   int length = temp_path(path, sizeof path, dir, lay_cnt, st, interval, &shape);
    /* a template `temp_full_generate' can serve is never rewritten: a regular
     * file at the path before the call is the file it hands back, everything
     * else makes it fail with a reason of its own */
-   was_there = stat(path, &fst) == 0 && S_ISREG(fst.st_mode);
+   was_there = length >= 0 && (size_t)length < sizeof path &&
+               stat(path, &fst) == 0 && S_ISREG(fst.st_mode);
 
-   status = temp_full_generate(dir, lay_cnt, st, interval, is_lite, node_size);
+   status = temp_generate(dir, lay_cnt, st, interval, is_lite, node_size, &shape);
+   temp_shape_free(&shape);
    if (status != TEMP_FULL_OK) return GEN_EXIT_FAIL;
 
    printf("temp_gen: %s: %s\n", path, was_there ? "reused" : "written");
    return GEN_EXIT_OK;
+USAGE:
+   temp_shape_free(&shape);
+   usage(stderr, argv[0]);
+   return GEN_EXIT_USAGE;
 }
 /*--------------------------------- MAIN END ---------------------------------*/
 
@@ -101,16 +113,18 @@ int main(int argc, char **argv)
 static void usage(FILE *stream, const char *prog)
 {
    fprintf(stream,
-           "usage: %s [--dir DIR] [--norm] [--node-size N] "
+           "usage: %s [--dir DIR] [--norm] [--node-size N] [--node-keys PATH=COUNT] "
            "LAY_CNT ST INTERVAL\n"
            "\n"
-           "Build, or reuse, the perfectly full template\n"
-           "<DIR>/<lay_cnt>-<st>-<interval>.bptr.\n"
+           "Build, or reuse, a template with full nodes unless overridden.\n"
+           "<DIR>/<lay_cnt>-<st>-<interval>[--keys-<overrides>].bptr.\n"
            "\n"
            "  --dir DIR       directory of the template (default %s)\n"
            "  --norm          use the 8-byte child pointer layout\n"
            "                  (default lite, 4-byte)\n"
            "  --node-size N   size of a node in bytes (default %u)\n"
+           "  --node-keys P=N override key count at root or a child path, e.g. 0.1\n"
+           "                  repeatable; child positions are zero-based\n"
            "  -h, --help      print this help and exit\n"
            "\n"
            "The template holds LAY_CNT levels of keys ST, ST + INTERVAL, ...;\n"

@@ -53,15 +53,25 @@ static _Bool _gen_kv_fits(unsigned int lay_cnt, int64_t st, int64_t interval,
 static int _fixture_matches(const char *path, unsigned int lay_cnt,
                             _Bool is_lite, uint32_t node_size);
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
-                            int64_t *st, int64_t interval);
+                            int64_t *st, int64_t interval, uint32_t count);
 static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
                              struct bptr_node *node);
 static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
                       struct bptr_node *node, int64_t *st, int64_t interval,
-                      int64_t *lmk);
+                      int64_t *lmk, const struct temp_shape_node *shape);
 static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
                         struct bptr_node *par_n, int64_t *st, int64_t interval,
-                        int64_t *lmk, struct bptr_node **out);
+                        int64_t *lmk, struct bptr_node **out,
+                        const struct temp_shape_node *shape);
+static _Bool _gen_shape_kv_fits(uint64_t records, int64_t st, int64_t interval);
+static int _gen_shape_check_pointers(uint64_t nodes, _Bool is_lite,
+                                      uint32_t node_size);
+static void _gen_shape_report_interval(uint64_t records, int64_t st,
+                                        int64_t interval);
+static int _shape_fixture_matches(const char *path, unsigned int levels,
+                                   int64_t st, int64_t interval, _Bool is_lite,
+                                   uint32_t node_size, const struct temp_shape *shape,
+                                   const struct temp_shape_counts *counts);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -69,13 +79,7 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
 int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt,
                    int64_t st, int64_t interval)
 {
-   size_t len = strlen(dir);
-   /* a trailing '/' of the directory is collapsed, so that both spellings of it
-    * name the same file */
-   const char *sep = (len > 0 && dir[len - 1] == '/') ? "" : "/";
-
-   return snprintf(buf, size, "%s%s%u-%" PRIi64 "-%" PRIi64 ".bptr",
-                   dir, sep, lay_cnt, st, interval);
+   return temp_path(buf, size, dir, lay_cnt, st, interval, NULL);
 }
 
 
@@ -149,6 +153,13 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
 int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
                        int64_t interval, _Bool is_lite, uint32_t node_size)
 {
+   return temp_generate(dir, lay_cnt, st, interval, is_lite, node_size, NULL);
+}
+
+int temp_generate(const char *dir, unsigned int lay_cnt, int64_t st,
+                   int64_t interval, _Bool is_lite, uint32_t node_size,
+                   const struct temp_shape *shape)
+{
    struct stat fst;
    char path[PATH_MAX];
    struct bptr *bptr;
@@ -157,6 +168,9 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
    uint32_t ptr_size;
    int status = TEMP_FULL_OK;
    int64_t st_it = st, lmk;
+   struct temp_shape_counts counts = {0};
+   _Bool custom = shape != NULL && shape->override_count != 0;
+   int path_len;
 
    /* a node level is stored in a uint16_t; the node cache also caps the height
     * (see `FULL_GEN_CACHE_CAP') */
@@ -174,18 +188,41 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
     * split of a full node and the verifier search it in that order.  Refuse the
     * request before a directory or a file is touched, and name the ascending
     * request that builds the same keys. */
+   if (custom)
+    {
+      status = temp_shape_count(shape, lay_cnt, is_lite, node_size, &counts);
+      if (status != TEMP_FULL_OK) return _gen_fail(status, NULL);
+    }
    if (interval < 0)
     {
-      _gen_report_interval(lay_cnt, st, interval, is_lite, node_size);
+      if (custom) _gen_shape_report_interval(counts.records, st, interval);
+      else _gen_report_interval(lay_cnt, st, interval, is_lite, node_size);
       return TEMP_FULL_E_INTERVAL;
     }
-   if (!_gen_kv_fits(lay_cnt, st, interval, is_lite, node_size))
-      return _gen_fail(TEMP_FULL_E_KV_OVERFLOW, NULL);
-
-   status = _gen_check_pointers(lay_cnt, is_lite, node_size);
+   if (custom)
+    {
+      if (!_gen_shape_kv_fits(counts.records, st, interval))
+         return _gen_fail(TEMP_FULL_E_KV_OVERFLOW, NULL);
+      status = _gen_shape_check_pointers(counts.nodes, is_lite, node_size);
+    }
+   else
+    {
+      if (!_gen_kv_fits(lay_cnt, st, interval, is_lite, node_size))
+         return _gen_fail(TEMP_FULL_E_KV_OVERFLOW, NULL);
+      status = _gen_check_pointers(lay_cnt, is_lite, node_size);
+    }
    if (status != TEMP_FULL_OK) return status;
 
-   temp_full_path(path, sizeof path, dir, lay_cnt, st, interval);
+   path_len = temp_path(path, sizeof path, dir, lay_cnt, st, interval, shape);
+   if (path_len < 0 || (size_t)path_len >= sizeof path ||
+       strlen(strrchr(path, '/') == NULL ? path : strrchr(path, '/') + 1) > NAME_MAX)
+      return _gen_fail(TEMP_FULL_E_NAME, NULL);
+   size_t component_len = 0;
+   for (const char *part = path; *part != '\0'; part++)
+    {
+      component_len = *part == '/' ? 0 : component_len + 1u;
+      if (component_len > NAME_MAX) return _gen_fail(TEMP_FULL_E_NAME, NULL);
+    }
    if (_ensure_par_dirs(path, 0755) == -1)
       return _gen_fail(TEMP_FULL_E_DIR, path);
 
@@ -195,6 +232,9 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
        * really is one: a partial image left by an interrupted run, or an image
        * built with some other layout, must not be served silently */
       status = _fixture_matches(path, lay_cnt, is_lite, node_size);
+      if (status == TEMP_FULL_OK && custom)
+         status = _shape_fixture_matches(path, lay_cnt, st, interval, is_lite,
+                                          node_size, shape, &counts);
       if (status != TEMP_FULL_OK) return _gen_fail(status, path);
       return TEMP_FULL_OK;
     }
@@ -242,7 +282,8 @@ int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
    bptr->root_idx = node->node_idx;
    status = _level_chain_push(bptr, prev_at_level, node);
    if (status == TEMP_FULL_OK)
-      status = _node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk);
+      status = _node_fill(bptr, prev_at_level, node, &st_it, interval, &lmk,
+                           shape == NULL ? NULL : shape->root);
    bptr_node_unload(bptr, node);
    if (status != TEMP_FULL_OK) goto GEN_ERR_FREE;
 
@@ -270,6 +311,8 @@ const char *temp_full_strerror(int status)
    switch (status)
     {
    case TEMP_FULL_OK           : return "success";
+   case TEMP_FULL_E_SHAPE      : return "node occupancy or path out of range";
+   case TEMP_FULL_E_NAME       : return "template name or path is too long";
    case TEMP_FULL_E_LAY_CNT    : return "lay_cnt out of range";
    case TEMP_FULL_E_NODE_SIZE  : return "node_size out of range";
    case TEMP_FULL_E_INTERVAL   : return "interval is negative: a template's "
@@ -294,8 +337,8 @@ const char *temp_full_strerror(int status)
 
 int cmp_i64(const void *lhs, const void *rhs)
 {
-   int64_t diff = *(const int64_t *)lhs - *(const int64_t *)rhs;
-   return diff < 0 ? -1 : diff > 0 ? 1 : 0;
+   int64_t left = *(const int64_t *)lhs, right = *(const int64_t *)rhs;
+   return left < right ? -1 : left > right ? 1 : 0;
 }
 /*--------------------------- Public Functions END ---------------------------*/
 
@@ -414,9 +457,9 @@ long long _ensure_par_dirs(char *path, mode_t mode)
 
 
 static void _node_fill_leaf(struct bptr *self, struct bptr_node *node,
-                            int64_t *st, int64_t interval)
+                            int64_t *st, int64_t interval, uint32_t count)
 {
-   for (uint32_t k_mx = self->node_bound.leaf.up - 1;
+   for (uint32_t k_mx = count;
         node->key_count < k_mx; node->key_count++)
     {
       /* Advance only when another key is actually needed.  The unused step
@@ -563,7 +606,7 @@ static int _level_chain_push(struct bptr *self, bptr_node_t *prev_at_level,
  */
 static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
                       struct bptr_node *node, int64_t *st, int64_t interval,
-                      int64_t *lmk)
+                      int64_t *lmk, const struct temp_shape_node *shape)
 {
    struct bptr_node *child;
    int64_t iter_lmk;
@@ -572,21 +615,25 @@ static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
    // base case
    if (node->is_leaf)
     {
-      _node_fill_leaf(self, node, st, interval);
+      _node_fill_leaf(self, node, st, interval,
+                      temp_shape_keys(shape, self->node_bound.leaf.up - 1u));
       *lmk = ((int64_t*)node->keys)[0];
       return TEMP_FULL_OK;
     }
 
    /* leftmost child; its leftmost key is also the one of `node' */
-   status = create_child(self, prev_at_level, node, st, interval, lmk, &child);
+   status = create_child(self, prev_at_level, node, st, interval, lmk, &child,
+                          temp_shape_child(shape, 0));
    if (status != TEMP_FULL_OK) return status;
    _node_brch_vals_set(self, node, 0, child->node_idx);
    bptr_node_unload(self, child);
 
-   for (; node->key_count < self->node_bound.brch.up - 1; node->key_count++)
+   for (uint32_t count = temp_shape_keys(shape, self->node_bound.brch.up - 1u);
+        node->key_count < count; node->key_count++)
     {
       status = create_child(self, prev_at_level, node, st, interval,
-                            &iter_lmk, &child);
+                            &iter_lmk, &child,
+                            temp_shape_child(shape, node->key_count + 1u));
       if (status != TEMP_FULL_OK) return status;
       /* the ith key of an internal node is the 0th key of the leftmost
        * descendant leaf of its (i + 1)th child */
@@ -616,7 +663,8 @@ static int _node_fill(struct bptr *self, bptr_node_t *prev_at_level,
  */
 static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
                         struct bptr_node *par_n, int64_t *st, int64_t interval,
-                        int64_t *lmk, struct bptr_node **out)
+                        int64_t *lmk, struct bptr_node **out,
+                        const struct temp_shape_node *shape)
 {
    struct bptr_node *node = bptr_node_new(self, par_n->node_idx);
    int status;
@@ -626,7 +674,7 @@ static int create_child(struct bptr *self, bptr_node_t *prev_at_level,
 
    status = _level_chain_push(self, prev_at_level, node);
    if (status == TEMP_FULL_OK)
-      status = _node_fill(self, prev_at_level, node, st, interval, lmk);
+      status = _node_fill(self, prev_at_level, node, st, interval, lmk, shape);
    if (status != TEMP_FULL_OK)
     {
       /* the subtree is incomplete: the top level drops the whole image */
@@ -848,4 +896,168 @@ static _Bool _gen_kv_fits(unsigned int lay_cnt, int64_t st, int64_t interval,
    largest = st + (int64_t)((rec_cnt - 1u) * (uint64_t)interval);
    return largest <= INT64_MAX / 2;
 }
+
+/* Shape totals are computed before any filesystem changes. The range of keys
+ * whose doubled values fit is inclusive, and division avoids count products. */
+static _Bool _gen_shape_kv_fits(uint64_t records, int64_t st, int64_t interval)
+{
+   if (st < INT64_MIN / 2 || st > INT64_MAX / 2 || records == 0) return 0;
+   if (interval == 0) return 1;
+   uint64_t distance = (uint64_t)(INT64_MAX / 2) - (uint64_t)st;
+   return records - 1u <= distance / (uint64_t)interval;
+}
+static int _gen_shape_check_pointers(uint64_t nodes, _Bool is_lite,
+                                      uint32_t node_size)
+{
+   uint64_t off_max = UINT64_MAX;
+   if (nodes > (is_lite ? UINT32_MAX : UINT64_MAX))
+      return _gen_fail(TEMP_FULL_E_PTR_OVERFLOW, NULL);
+   if (sizeof (bptr_off_t) * CHAR_BIT <= 64u)
+      off_max >>= 64u - (sizeof (bptr_off_t) * CHAR_BIT - 1u);
+   uint64_t blocks = off_max / node_size;
+   if (blocks == 0 || nodes > blocks - 1u)
+      return _gen_fail(TEMP_FULL_E_PTR_OVERFLOW, NULL);
+   return TEMP_FULL_OK;
+}
+static void _gen_shape_report_interval(uint64_t records, int64_t st,
+                                        int64_t interval)
+{
+   uint64_t mag = (uint64_t)(-(interval + 1)) + 1u;
+   (void)_gen_fail(TEMP_FULL_E_INTERVAL, NULL);
+   if (records != 0 && mag <= INT64_MAX &&
+       records - 1u <= UINT64_MAX / mag &&
+       mag * (records - 1u) <= (uint64_t)st + (UINT64_C(1) << 63))
+      fprintf(stderr, "temp_full_generate: interval %" PRIi64 " descends; "
+                      "retry with interval %" PRIi64 " and st %" PRIi64
+                      " (interval * -1, from the last key of that lattice)\n",
+              interval, (int64_t)mag,
+              (int64_t)((uint64_t)st - mag * (records - 1u)));
+   else
+      fprintf(stderr, "temp_full_generate: interval %" PRIi64 " descends; "
+                      "retry with interval * -1 and the last key of that "
+                      "lattice as st (st + interval * (record_cnt - 1))\n", interval);
+}
+
+struct fixture_reader {
+   FILE *file;
+   uint32_t node_size, ptr_size, leaf_keys, branch_keys;
+   uint64_t nodes, records, seen_nodes, seen_records;
+   uint64_t *previous, *next;
+   int64_t cursor, interval;
+};
+static uint64_t fixture_pointer(const unsigned char *p, uint32_t width)
+{
+   uint64_t value = 0;
+   if (width == 4) { uint32_t short_value; memcpy(&short_value, p, 4); value = short_value; }
+   else memcpy(&value, p, 8);
+   return value;
+}
+static int fixture_read(struct fixture_reader *r, uint64_t node, uint64_t within,
+                          void *buf, size_t size)
+{
+   if (node > r->nodes || within > r->node_size || size > r->node_size - within)
+      return TEMP_FULL_E_FIXTURE;
+   uint64_t position = node * (uint64_t)r->node_size + within;
+   if (fseeko(r->file, (bptr_off_t)position, SEEK_SET) != 0)
+      return TEMP_FULL_E_UNREADABLE;
+   if (fread(buf, 1, size, r->file) != size)
+      return ferror(r->file) ? TEMP_FULL_E_UNREADABLE : TEMP_FULL_E_FIXTURE;
+   return TEMP_FULL_OK;
+}
+static int fixture_node(struct fixture_reader *r, uint64_t index, uint64_t parent,
+                          unsigned int level, const struct temp_shape_node *shape,
+                          int64_t *leftmost)
+{
+   unsigned char metadata[BPTR_NODE_METADATA_BYTE], pointer[8];
+   uint16_t flags, stored_level;
+   uint32_t keys;
+   int status = fixture_read(r, index, 0, metadata, sizeof metadata);
+   if (status != TEMP_FULL_OK) return status;
+   memcpy(&flags, metadata, 2);
+   memcpy(&stored_level, metadata + 2, 2);
+   memcpy(&keys, metadata + 4, 4);
+   uint32_t requested = temp_shape_keys(shape, level == 0 ? r->leaf_keys : r->branch_keys);
+   uint64_t prev = fixture_pointer(metadata + 12 + 2u * r->ptr_size, r->ptr_size);
+   uint64_t next = fixture_pointer(metadata + 12 + r->ptr_size, r->ptr_size);
+   if (index == 0 || ++r->seen_nodes > r->nodes ||
+       flags != (uint16_t)(BPTR_NODE_FLAG_VALID | (level == 0 ? BPTR_NODE_FLAG_LEAF : 0)) ||
+       stored_level != level || keys != requested ||
+       fixture_pointer(metadata + 12, r->ptr_size) != parent ||
+       prev != r->previous[level] ||
+       (r->previous[level] != 0 && r->next[level] != index)) return TEMP_FULL_E_FIXTURE;
+   r->previous[level] = index; r->next[level] = next;
+   if (level == 0) {
+      for (uint32_t i = 0; i < keys; i++) {
+         int64_t key, value;
+         if (r->seen_records != 0) r->cursor += r->interval;
+         status = fixture_read(r, index, BPTR_NODE_METADATA_BYTE + (uint64_t)i * 8u, &key, 8);
+         if (status != TEMP_FULL_OK) return status;
+         status = fixture_read(r, index, BPTR_NODE_METADATA_BYTE + (uint64_t)keys * 8u + (uint64_t)i * 8u, &value, 8);
+         if (status != TEMP_FULL_OK) return status;
+         if (key != r->cursor || value != key * 2 || ++r->seen_records > r->records)
+            return TEMP_FULL_E_FIXTURE;
+         if (i == 0) *leftmost = key;
+      }
+      return TEMP_FULL_OK;
+   }
+   for (uint32_t i = 0; i <= keys; i++) {
+      int64_t child_leftmost, separator;
+      status = fixture_read(r, index, BPTR_NODE_METADATA_BYTE + (uint64_t)keys * 8u +
+                             (uint64_t)i * r->ptr_size, pointer, r->ptr_size);
+      if (status != TEMP_FULL_OK) return status;
+      uint64_t child = fixture_pointer(pointer, r->ptr_size);
+      status = fixture_node(r, child, index, level - 1u, temp_shape_child(shape, i), &child_leftmost);
+      if (status != TEMP_FULL_OK) return status;
+      if (i == 0) *leftmost = child_leftmost;
+      else {
+         status = fixture_read(r, index, BPTR_NODE_METADATA_BYTE + (uint64_t)(i - 1u) * 8u, &separator, 8);
+         if (status != TEMP_FULL_OK) return status;
+         if (separator != child_leftmost) return TEMP_FULL_E_FIXTURE;
+      }
+   }
+   return TEMP_FULL_OK;
+}
+static int _shape_fixture_matches(const char *path, unsigned int levels,
+                                   int64_t st, int64_t interval, _Bool is_lite,
+                                   uint32_t node_size, const struct temp_shape *shape,
+                                   const struct temp_shape_counts *counts)
+{
+   struct fixture_reader reader = {0};
+   unsigned char header[64];
+   uint64_t records, nodes, root;
+   int64_t leftmost;
+   int status;
+   reader.file = fopen(path, "rb");
+   if (reader.file == NULL) return TEMP_FULL_E_UNREADABLE;
+   reader.ptr_size = is_lite ? 4u : 8u;
+   reader.node_size = node_size;
+   reader.nodes = counts->nodes;
+   reader.records = counts->records;
+   reader.cursor = st; reader.interval = interval;
+   reader.leaf_keys = (node_size - BPTR_NODE_METADATA_BYTE) / 16u;
+   reader.branch_keys = (node_size - BPTR_NODE_METADATA_BYTE - reader.ptr_size) / (8u + reader.ptr_size);
+   status = fixture_read(&reader, 0, 0, header, sizeof header);
+   if (status != TEMP_FULL_OK) goto finish;
+   memcpy(&records, header + 16, 8);
+   root = fixture_pointer(header + 28, reader.ptr_size);
+   nodes = fixture_pointer(header + 28 + 3u * reader.ptr_size, reader.ptr_size);
+   if (records != counts->records || nodes != counts->nodes ||
+       fixture_pointer(header + 28 + reader.ptr_size, reader.ptr_size) != 0 ||
+       fixture_pointer(header + 28 + 2u * reader.ptr_size, reader.ptr_size) != 0) {
+      status = TEMP_FULL_E_FIXTURE; goto finish;
+   }
+   reader.previous = calloc(levels, sizeof *reader.previous);
+   reader.next = calloc(levels, sizeof *reader.next);
+   if (reader.previous == NULL || reader.next == NULL) { status = TEMP_FULL_E_ALLOC; goto finish; }
+   status = fixture_node(&reader, root, 0, levels - 1u, shape->root, &leftmost);
+   if (status == TEMP_FULL_OK && (reader.seen_nodes != counts->nodes || reader.seen_records != counts->records))
+      status = TEMP_FULL_E_FIXTURE;
+   for (unsigned int i = 0; status == TEMP_FULL_OK && i < levels; i++)
+      if (reader.next[i] != 0) status = TEMP_FULL_E_FIXTURE;
+finish:
+   free(reader.previous); free(reader.next);
+   fclose(reader.file);
+   return status;
+}
+
 /*-------------------------- Private Functions END ---------------------------*/

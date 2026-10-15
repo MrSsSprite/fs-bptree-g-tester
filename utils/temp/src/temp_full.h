@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "bptree.h"
+#include "temp_shape.h"
 /*--------------------------- Public Includes END ----------------------------*/
 
 
@@ -27,6 +28,8 @@
 #define TEMP_FULL_E_INTERVAL   (-3) /* interval is negative: the keys must ascend */
 #define TEMP_FULL_E_KV_OVERFLOW (-4) /* a generated key or doubled value overflows */
 #define TEMP_FULL_E_PTR_OVERFLOW (-5) /* node indices or file offsets cannot fit */
+#define TEMP_FULL_E_SHAPE      (-6) /* illegal occupancy or nonexistent path */
+#define TEMP_FULL_E_NAME       (-7) /* fixture name or full path is too long */
 #define TEMP_FULL_E_FIXTURE    (1)  /* an existing file is not this fixture */
 #define TEMP_FULL_E_UNREADABLE (2)  /* an existing file cannot be read */
 #define TEMP_FULL_E_DIR        (3)  /* the fixture directory cannot be created */
@@ -98,6 +101,15 @@ int temp_full_path(char *buf, size_t size, const char *dir, unsigned int lay_cnt
  */
 int temp_full_generate(const char *dir, unsigned int lay_cnt, int64_t st,
                        int64_t interval, _Bool is_lite, uint32_t node_size);
+/** Build or reuse a shaped fixture. Unspecified nodes are full; shape paths
+ * and occupancy are validated together before filesystem changes. A NULL or
+ * empty shape has the same behavior as temp_full_generate. Custom fixture reuse
+ * checks exact original occupancy, totals, lattice, and structural links using
+ * read-only I/O. Names and path components that exceed their limits are refused
+ * before directories or files are created. */
+int temp_generate(const char *dir, unsigned int lay_cnt, int64_t st,
+                   int64_t interval, _Bool is_lite, uint32_t node_size,
+                   const struct temp_shape *shape);
 /**
  * @brief   Name a `TEMP_FULL_*' status
  *
@@ -127,11 +139,15 @@ int temp_instantiate(const char *dst, const char *src);
 /**
  * @brief   Assert the shape of a loaded template
  *
- * The template holds a perfectly full tree over the `st'/`interval' lattice,
- * which may start at any @p st; @p interval must not be 0.
- * An optional inserted record must occur exactly once. The summed leaf-record
- * count and the header record count must both equal the count computed from
- * the original full-tree shape, plus one when an inserted record is expected.
+ * The original template follows @p shape over the `st'/`interval' lattice;
+ * unspecified nodes are full. A NULL or empty shape requests a full tree.
+ * The lattice may start at any @p st; @p interval must not be 0. Pristine images
+ * must match occupancy at every original path and independently computed totals.
+ * An optional inserted record must occur exactly once. Custom inserted images
+ * require @p expected final height, node count and leaf count. Summed leaf-record
+ * and header record counts must equal the original shape's record count plus one.
+ * Full images retain their existing inferred split expectations when @p expected
+ * is NULL.
  * The root has no parent. Every other internal node must be referenced exactly
  * once by its parent, and every child of an internal node must point back to
  * its owner.
@@ -145,6 +161,11 @@ int temp_instantiate(const char *dst, const char *src);
  * (`RUN_TEST' installs the abort frame an assertion longjmps to).  The
  * definition in `temp_verify.c' documents what is checked.
  */
+void temp_verify(struct bptr *bptr, unsigned int lay_cnt, int64_t st,
+                   int64_t interval, _Bool has_new_kv, int64_t key, int64_t val,
+                   const struct temp_shape *shape,
+                   const struct temp_verify_expect *expected);
+/* Compatible full-tree wrapper: uses the original inferred expectations. */
 void temp_full_verify(struct bptr *bptr,
                       unsigned int lay_cnt, int64_t st, int64_t interval,
                       _Bool has_new_kv, int64_t key, int64_t val);
