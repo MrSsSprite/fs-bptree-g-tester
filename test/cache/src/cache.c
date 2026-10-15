@@ -43,8 +43,8 @@ void test_cache_init(void)
          bptr = _bptr_create(temp_it + i);
          TEST_ASSERT_NOT_NULL_MESSAGE(bptr->cache,
                                       "cache not allocated");
-         TEST_ASSERT_MESSAGE(bptr_unload(bptr) == BPTR_E_SUCCESS,
-                             "bptr_unload failure");
+         TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+                                       "bptr_unload failure");
          bptr_cleanup_file(temp_it[i].fnm);
          puts("Succeeded.");
        }
@@ -73,12 +73,12 @@ void test_cache_node_lifecycle(void)
    printf("\t\tCreating root node...");
    node = bptr_node_new(bptr, 0);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "bptr_node_new returned NULL");
-   TEST_ASSERT_EQUAL_MESSAGE(0, node->level,
-                             "root node should be at level 0 (leaf)");
-   TEST_ASSERT_MESSAGE(node->is_leaf,
-                       "root node should be a leaf");
-   TEST_ASSERT_NOT_EQUAL_MESSAGE(0, node->node_idx,
-                                 "node_idx should be allocated (non-zero)");
+   TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, node->level,
+                                    "root node should be at level 0 (leaf)");
+   TEST_ASSERT_TRUE_MESSAGE(node->is_leaf,
+                            "root node should be a leaf");
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, node->node_idx,
+                                        "node_idx should be allocated (non-zero)");
    node_idx = node->node_idx;
    puts("done.");
 
@@ -91,14 +91,14 @@ void test_cache_node_lifecycle(void)
    printf("\t\tRe-fetching node (expect cache HIT)...");
    node2 = bptr_node_fetch(bptr, node_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node2, "cache HIT: node should still be in cache");
-   TEST_ASSERT_EQUAL_MESSAGE(node, node2,
-                             "cache HIT: fetched pointer must match original");
-   TEST_ASSERT_EQUAL_MESSAGE(node_idx, node2->node_idx,
-                             "node_idx should be preserved");
-   TEST_ASSERT_EQUAL_MESSAGE(0, node2->level,
-                             "level should be preserved");
-   TEST_ASSERT_MESSAGE(node2->is_leaf,
-                       "is_leaf should be preserved");
+   TEST_ASSERT_EQUAL_PTR_MESSAGE(node, node2,
+                                 "cache HIT: fetched pointer must match original");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(node_idx, node2->node_idx,
+                                    "node_idx should be preserved");
+   TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, node2->level,
+                                    "level should be preserved");
+   TEST_ASSERT_TRUE_MESSAGE(node2->is_leaf,
+                            "is_leaf should be preserved");
    puts("done.");
 
    // Release again
@@ -107,8 +107,8 @@ void test_cache_node_lifecycle(void)
    puts("done.");
 
    // Cleanup
-   TEST_ASSERT_MESSAGE(bptr_unload(bptr) == BPTR_E_SUCCESS,
-                       "bptr_unload failure");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+                                 "bptr_unload failure");
    bptr_cleanup_file(template.fnm);
    puts("\tNode Lifecycle Test: Succeeded.");
 }
@@ -147,10 +147,10 @@ void test_cache_data_persistence(void)
 
    // Flush A (persist to disk, is_dirty cleared)
    printf("\t\tFlushing node A...");
-   TEST_ASSERT_MESSAGE(bptr_node_flush(bptr, node_a) == 0,
-                       "flush node A failed");
-   TEST_ASSERT_MESSAGE(!node_a->is_dirty,
-                       "is_dirty should be cleared after flush");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_node_flush(bptr, node_a),
+                                 "flush node A failed");
+   TEST_ASSERT_FALSE_MESSAGE(node_a->is_dirty,
+                             "is_dirty should be cleared after flush");
    puts("done.");
 
    // Release A (refcount 2→1, INACTIVE, oldest in eviction queue)
@@ -191,20 +191,20 @@ void test_cache_data_persistence(void)
 
    // Verify restored data
    printf("\t\tVerifying recovered data...");
-   TEST_ASSERT_EQUAL_MESSAGE(1, node_a->key_count,
-                             "key_count should be 1");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, node_a->key_count,
+                                    "key_count should be 1");
    memcpy(&recovered_key, node_a->keys, sizeof(recovered_key));
    TEST_ASSERT_EQUAL_HEX32_MESSAGE(test_key, recovered_key,
                                    "recovered key should match original");
-   TEST_ASSERT_MESSAGE(!node_a->is_dirty,
-                       "loaded node should not be dirty");
+   TEST_ASSERT_FALSE_MESSAGE(node_a->is_dirty,
+                             "loaded node should not be dirty");
    puts("done.");
 
    // Cleanup
    printf("\t\tCleaning up...");
    bptr_node_unload(bptr, node_a);
-   TEST_ASSERT_MESSAGE(bptr_unload(bptr) == BPTR_E_SUCCESS,
-                       "bptr_unload failure");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+                                 "bptr_unload failure");
    bptr_cleanup_file(template.fnm);
    puts("done.");
    puts("\tData Persistence Test: Succeeded.");
@@ -229,8 +229,8 @@ void test_cache_capacity_boundaries(void)
                     0, cmp_u32_local);
    TEST_ASSERT_NULL_MESSAGE(bptr,
                             "bptr_init(cache_cap=0) should return NULL");
-   TEST_ASSERT_EQUAL_MESSAGE(BPTR_E_FN_INPUT, bptr_errno,
-                             "bptr_errno should be BPTR_E_FN_INPUT for cap=0");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_FN_INPUT, bptr_errno,
+                                 "bptr_errno should be BPTR_E_FN_INPUT for cap=0");
    puts("passed.");
 
    printf("\t\t  capacity=1...");
@@ -239,8 +239,8 @@ void test_cache_capacity_boundaries(void)
                     1, cmp_u32_local);
    TEST_ASSERT_NULL_MESSAGE(bptr,
                             "bptr_init(cache_cap=1) should return NULL (< MIN)");
-   TEST_ASSERT_EQUAL_MESSAGE(BPTR_E_FN_INPUT, bptr_errno,
-                             "bptr_errno should be BPTR_E_FN_INPUT for cap=1");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_FN_INPUT, bptr_errno,
+                                 "bptr_errno should be BPTR_E_FN_INPUT for cap=1");
    puts("passed.");
 
    // --- Test cache-full condition ---
@@ -271,16 +271,16 @@ void test_cache_capacity_boundaries(void)
       node3 = bptr_node_fetch(bptr, 999);
       TEST_ASSERT_NULL_MESSAGE(node3,
                                "fetch should return NULL when cache full");
-      TEST_ASSERT_EQUAL_MESSAGE(BPTR_E_CACHE_FULL, bptr_errno,
-                                "bptr_errno should be BPTR_E_CACHE_FULL");
+      TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_CACHE_FULL, bptr_errno,
+                                    "bptr_errno should be BPTR_E_CACHE_FULL");
       puts("done.");
 
       // Cleanup
       printf("\t\t  Cleaning up...");
       bptr_node_unload(bptr, node1);
       bptr_node_unload(bptr, node2);
-      TEST_ASSERT_MESSAGE(bptr_unload(bptr) == BPTR_E_SUCCESS,
-                          "bptr_unload failure");
+      TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+                                    "bptr_unload failure");
       bptr_cleanup_file(template.fnm);
       puts("done.");
    }

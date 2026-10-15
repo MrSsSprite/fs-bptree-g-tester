@@ -49,7 +49,7 @@ void temp_full_verify(struct bptr *bptr,
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "bptr == NULL");
    if (lay_cnt == 0) return;
    /* A zero step is not a lattice. */
-   TEST_ASSERT_TRUE_MESSAGE(interval != 0, "interval == 0");
+   TEST_ASSERT_NOT_EQUAL_INT64_MESSAGE(0, interval, "interval == 0");
    TEST_ASSERT_EQUAL_UINT32_MESSAGE((has_new_kv ? lay_cnt + 1 : lay_cnt),
                                     bptr->height, "height incorrect");
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, bptr->root_idx, "root_idx == 0");
@@ -60,15 +60,15 @@ void temp_full_verify(struct bptr *bptr,
    expect_record_cnt = bptr->node_bound.leaf.up - 1;
    for (unsigned int level = 1; level < lay_cnt; level++)
     {
-      TEST_ASSERT_TRUE_MESSAGE(
-         expect_record_cnt <= UINT64_MAX / bptr->node_bound.brch.up,
+      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(
+         UINT64_MAX / bptr->node_bound.brch.up, expect_record_cnt,
          "expected record count overflows");
       expect_record_cnt *= bptr->node_bound.brch.up;
     }
    if (has_new_kv)
     {
-      TEST_ASSERT_TRUE_MESSAGE(expect_record_cnt < UINT64_MAX,
-                               "expected record count overflows");
+      TEST_ASSERT_LESS_THAN_UINT64_MESSAGE(UINT64_MAX, expect_record_cnt,
+                                           "expected record count overflows");
       expect_record_cnt++;
     }
 
@@ -160,8 +160,9 @@ void temp_full_verify(struct bptr *bptr,
       node = next_n;
 
       TEST_ASSERT_TRUE_MESSAGE(node->is_leaf, "leaf is_leaf false");
-      TEST_ASSERT_TRUE_MESSAGE(leaf_record_cnt <= UINT64_MAX - node->key_count,
-                               "leaf record count overflows");
+      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(UINT64_MAX - node->key_count,
+                                               leaf_record_cnt,
+                                               "leaf record count overflows");
       leaf_record_cnt += node->key_count;
       for (uint32_t i = 0; i < node->key_count; i++)
        {
@@ -265,10 +266,10 @@ void temp_full_verify(struct bptr *bptr,
                                           prior_n->node_idx,
                                           "internal node chain broken");
          TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "internal node is_leaf true");
-         TEST_ASSERT_TRUE_MESSAGE((node->flags & BPTR_NODE_FLAG_VALID) != 0,
-                                  "internal node flags not valid");
-         TEST_ASSERT_FALSE_MESSAGE((node->flags & BPTR_NODE_FLAG_LEAF) != 0,
-                                   "internal node flags marked as leaf");
+         TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, node->flags,
+                                       "internal node flags not valid");
+         TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, node->flags,
+                                      "internal node flags marked as leaf");
          TEST_ASSERT_EQUAL_UINT16_MESSAGE(level, node->level,
                                           "internal node level incorrect");
          if (!has_new_kv)

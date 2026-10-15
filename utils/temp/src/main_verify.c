@@ -202,8 +202,8 @@ static void test_template(void)
 {
    temp_full_verify(g_req.bptr, g_req.lay_cnt, g_req.st, g_req.interval,
                     g_req.has_new_kv, g_req.key, g_req.val);
-   TEST_ASSERT_EQUAL_MESSAGE(BPTR_E_SUCCESS, bptr_unload(g_req.bptr),
-                             "cannot unload the image");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(g_req.bptr),
+                                 "cannot unload the image");
    g_verified = 1;
 }
 
