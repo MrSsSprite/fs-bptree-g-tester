@@ -46,6 +46,14 @@ parents, missing or duplicate child references, and a nonzero root parent in
 both layouts. Independently encoded split images exercise the same checks when
 an inserted record is expected.
 
+Verifier overflow regressions cover inclusive key/value boundaries, unused
+final steps, large lattice spans, positive and negative step overflow, and
+wrapped values in the first and later leaves. They include split images with
+boundary keys and arbitrary inserted values. Run the same suite with
+`TEMP_VERIFY` pointing at a verifier built with undefined-behavior sanitizers
+to check that valid boundary fixtures perform no overflowing intermediate
+arithmetic. The core objects can remain uninstrumented.
+
 ## Name convention
 
 A template is
@@ -215,6 +223,16 @@ against `(leaf.up - 1) * brch.up^(LAY_CNT - 1)`, plus one when an inserted recor
 is expected. Computing that expected total uses checked arithmetic and does
 not depend on the number of leaves visited, the key lattice walk or the header
 record count.
+
+Lattice-key addition and doubling an original key are checked before they are
+evaluated; an unrepresentable key or doubled value fails verification (exit 1).
+The expected key advances only when another original record is visited, so an
+unused step after the final key need not fit `int64_t`. Inserted records do not
+advance the original lattice, and their values are checked against `--val`.
+Leaf and node totals are checked against the full-tree geometry using checked
+unsigned arithmetic, without multiplying counts by `INTERVAL` or subtracting
+signed key endpoints. A valid template whose intermediate count-times-interval
+product would exceed `int64_t` is therefore still accepted.
 
 The name is read as three decimal numbers, so a spelling the generator would
 never write -- `01-0-16.bptr` -- is accepted as well.  A caller that needs the

@@ -10,6 +10,8 @@
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx);
 static void _verify_parent_links(struct bptr *self, struct bptr_node *node);
+static void _verify_lattice_record(int64_t *st, int64_t interval,
+                                   _Bool *has_record, int64_t key, int64_t val);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -21,9 +23,9 @@ static void _verify_parent_links(struct bptr *self, struct bptr_node *node);
  * Walks a loaded image and checks its shape: leftmost leaf, one global chain
  * per level, leaf fullness and `st'/`interval'/`val == key * 2`, internal-node
  * fullness, flags/levels, parent pointers, and
- * `key[i] == leftmost key of child i + 1'.  The lattice may start at any @p st
- * -- the record-count checks below measure the walk from it -- and @p interval
- * must not be 0, so that the lattice advances.
+ * `key[i] == leftmost key of child i + 1'. The lattice may start at any @p st,
+ * and @p interval must not be 0. Only keys actually visited are computed;
+ * advancing the lattice and doubling a key are checked before evaluation.
  *
  * `has_new_kv' / @p key / @p val describe an optional inserted record: with
  * `has_new_kv' the verifier expects `height == lay_cnt + 1' and requires that
@@ -39,19 +41,15 @@ void temp_full_verify(struct bptr *bptr,
                       _Bool has_new_kv, int64_t key, int64_t val)
 {
    struct bptr_node *node, *par_n, *next_n;
-   _Bool has_met_new_kv = 0;
-   uint_fast64_t leaf_cnt = 0;
-   uint64_t leaf_record_cnt = 0, expect_record_cnt;
-   /* The lattice starts here: `st' below walks it and is advanced by
-    * `interval' as keys are laid down, so the count checks at the end have to
-    * measure the walk from the start key rather than from 0. */
-   const int64_t st0 = st;
+   _Bool has_met_new_kv = 0, has_lattice_record = 0;
+   uint64_t leaf_cnt = 0, leaf_record_cnt = 0;
+   uint64_t expect_record_cnt, expect_leaf_cnt, expect_node_cnt = 1;
 
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "bptr == NULL");
    if (lay_cnt == 0) return;
    /* A zero step is not a lattice. */
    TEST_ASSERT_NOT_EQUAL_INT64_MESSAGE(0, interval, "interval == 0");
-   TEST_ASSERT_EQUAL_UINT32_MESSAGE((has_new_kv ? lay_cnt + 1 : lay_cnt),
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t)lay_cnt + (has_new_kv ? 1u : 0u),
                                     bptr->height, "height incorrect");
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, bptr->root_idx, "root_idx == 0");
 
@@ -65,12 +63,27 @@ void temp_full_verify(struct bptr *bptr,
          UINT64_MAX / bptr->node_bound.brch.up, expect_record_cnt,
          "expected record count overflows");
       expect_record_cnt *= bptr->node_bound.brch.up;
+      /* Horner's recurrence sums the nodes without forming an unused power
+       * one level beyond the tree: next = current * fanout + 1. */
+      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(
+         (UINT64_MAX - 1u) / bptr->node_bound.brch.up, expect_node_cnt,
+         "expected node count overflows");
+      expect_node_cnt = expect_node_cnt * bptr->node_bound.brch.up + 1u;
     }
+   expect_leaf_cnt = expect_record_cnt / (bptr->node_bound.leaf.up - 1u);
    if (has_new_kv)
     {
+      uint64_t added_nodes = (uint64_t)lay_cnt + 1u;
+
       TEST_ASSERT_LESS_THAN_UINT64_MESSAGE(UINT64_MAX, expect_record_cnt,
                                            "expected record count overflows");
       expect_record_cnt++;
+      /* The original leaf total cannot exceed the original record total. */
+      expect_leaf_cnt++;
+      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(UINT64_MAX - added_nodes,
+                                               expect_node_cnt,
+                                               "expected node count overflows");
+      expect_node_cnt += added_nodes;
     }
 
    /*--------------------------- check leaf layer ----------------------------*/
@@ -123,14 +136,12 @@ void temp_full_verify(struct bptr *bptr,
                                                    "incorrect key insert "
                                                    "location");
           }
-         TEST_ASSERT_EQUAL_INT64_MESSAGE(st, ((int64_t*)node->keys)[i],
-                                         "leaf key not match");
-         TEST_ASSERT_EQUAL_INT64_MESSAGE(st * 2, ((int64_t*)node->vals)[i],
-                                         "leaf val not match");
-         st += interval;
+         _verify_lattice_record(&st, interval, &has_lattice_record,
+                                 ((int64_t*)node->keys)[i],
+                                 ((int64_t*)node->vals)[i]);
        }
     }
-   leaf_cnt++;
+   leaf_cnt = 1;
    for (uint32_t i = 1; node->next; i++)
     {
       next_n = bptr_node_fetch(bptr, node->next);
@@ -190,13 +201,13 @@ void temp_full_verify(struct bptr *bptr,
                                                       "incorrect key insert "
                                                       "location");
              }
-            TEST_ASSERT_EQUAL_INT64_MESSAGE(st, ((int64_t*)node->keys)[i],
-                                            "leaf key not match");
-            TEST_ASSERT_EQUAL_INT64_MESSAGE(st * 2, ((int64_t*)node->vals)[i],
-                                            "leaf val not match");
-            st += interval;
+            _verify_lattice_record(&st, interval, &has_lattice_record,
+                                    ((int64_t*)node->keys)[i],
+                                    ((int64_t*)node->vals)[i]);
           }
        }
+      TEST_ASSERT_LESS_THAN_UINT64_MESSAGE(UINT64_MAX, leaf_cnt,
+                                           "leaf count overflows");
       leaf_cnt++;
     }
    if (has_new_kv)
@@ -206,38 +217,14 @@ void temp_full_verify(struct bptr *bptr,
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(expect_record_cnt, bptr->record_cnt,
                                     "record count incorrect");
 
-   /* `st' has walked the keys of the original lattice only, from `st0': the
-    * inserted key is skipped where it is met, and the leaf it was added to was
-    * split in two, so the walk sees the keys of `leaf_cnt - 1' full leaves.
-    * The inserted record is one more than that in the tree's own count. */
-   if (has_new_kv)
-      TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         st0 + ((int64_t)(leaf_cnt - 1) * (bptr->node_bound.leaf.up - 1))
-                  * interval,
-         st,
-         "record count (derived from st) not correct");
-   else
-      TEST_ASSERT_EQUAL_INT64_MESSAGE(
-         st0 + (int64_t)leaf_cnt * (bptr->node_bound.leaf.up - 1) * interval,
-         st,
-         "record count (derived from st) not correct");
-
-   /* A template holds one node per level of its shape: `brch.up' children per
-    * node means `brch.up^(lay_cnt - 1)' leaves and one node per node above
-    * them.  The split of a full image adds one sibling per level and, over the
-    * root it split, one new root. */
-   {
-      uint_fast64_t level_cnt = 1, expect_node_cnt = 0;
-
-      for (uint32_t level = 0; level < lay_cnt; level++)
-       {
-         expect_node_cnt += level_cnt;
-         level_cnt *= bptr->node_bound.brch.up;
-       }
-      if (has_new_kv) expect_node_cnt += lay_cnt + 1;
-      TEST_ASSERT_EQUAL_UINT64_MESSAGE(expect_node_cnt, bptr->node_cnt,
-                                       "node count incorrect");
-   }
+   /* Counts come from checked geometry, never from a signed key difference
+    * or a product with interval. Multiplying even a valid lattice's record
+    * count by its interval (or computing an unused next key) can exceed
+    * int64_t although every stored key and value fits. */
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(expect_leaf_cnt, leaf_cnt,
+                                    "leaf count incorrect");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(expect_node_cnt, bptr->node_cnt,
+                                    "node count incorrect");
 
    /*----------------------- check internal node layers ----------------------*/
    // The leaf layer has been traversed to its far right; walk every internal
@@ -305,6 +292,31 @@ void temp_full_verify(struct bptr *bptr,
 
 
 /*---------------------------- Private Functions -----------------------------*/
+static void _verify_lattice_record(int64_t *st, int64_t interval,
+                                   _Bool *has_record, int64_t key, int64_t val)
+{
+   /* Advance before an original record, not after it. Inserted records do not
+    * consume a lattice step, and no unused step after the last key is needed. */
+   if (*has_record)
+    {
+      if (interval > 0)
+         TEST_ASSERT_LESS_OR_EQUAL_INT64_MESSAGE(INT64_MAX - interval, *st,
+                                                 "lattice key overflows");
+      else
+         TEST_ASSERT_GREATER_OR_EQUAL_INT64_MESSAGE(INT64_MIN - interval, *st,
+                                                    "lattice key overflows");
+      *st += interval;
+    }
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(*st, key, "leaf key not match");
+   TEST_ASSERT_GREATER_OR_EQUAL_INT64_MESSAGE(INT64_MIN / 2, *st,
+                                              "lattice value overflows");
+   TEST_ASSERT_LESS_OR_EQUAL_INT64_MESSAGE(INT64_MAX / 2, *st,
+                                           "lattice value overflows");
+   TEST_ASSERT_EQUAL_INT64_MESSAGE(*st * 2, val, "leaf val not match");
+   *has_record = 1;
+}
+
+
 static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
 {
    if (node->node_idx != self->root_idx)

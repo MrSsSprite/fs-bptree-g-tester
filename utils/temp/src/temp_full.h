@@ -135,6 +135,9 @@ int temp_instantiate(const char *dst, const char *src);
  * The root has no parent. Every other internal node must be referenced exactly
  * once by its parent, and every child of an internal node must point back to
  * its owner.
+ * Lattice additions, doubled original values and expected counts are checked
+ * before evaluation. Only stored keys must fit: the unused step after the
+ * final original key is never computed, including in a split image.
  *
  * Asserts with fixed messages, so it is only callable from inside a Unity case
  * (`RUN_TEST' installs the abort frame an assertion longjmps to).  The
