@@ -132,6 +132,9 @@ int temp_instantiate(const char *dst, const char *src);
  * An optional inserted record must occur exactly once. The summed leaf-record
  * count and the header record count must both equal the count computed from
  * the original full-tree shape, plus one when an inserted record is expected.
+ * The root has no parent. Every other internal node must be referenced exactly
+ * once by its parent, and every child of an internal node must point back to
+ * its owner.
  *
  * Asserts with fixed messages, so it is only callable from inside a Unity case
  * (`RUN_TEST' installs the abort frame an assertion longjmps to).  The

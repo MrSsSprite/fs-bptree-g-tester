@@ -40,7 +40,11 @@ the final key, and small template generation, verification and reuse.  Set
 built with integer overflow sanitizers. The verifier suite covers missing and
 duplicate inserted records, including duplicates across leaf boundaries, and
 incorrect physical/header record totals in both lite and normal layouts. Set
-`TEMP_VERIFY` to run that suite against another verifier binary.
+`TEMP_VERIFY` to run the verifier suites against another verifier binary. Parent
+link regressions cover every branch of a four-level tree, stale/zero/unreadable
+parents, missing or duplicate child references, and a nonzero root parent in
+both layouts. Independently encoded split images exercise the same checks when
+an inserted record is expected.
 
 ## Name convention
 
@@ -192,7 +196,12 @@ Loads every `TEMPLATE` with `bptr_load(path, 256, &cmp_i64)` and walks it with
 covers the height, the root, the record and node counts, the leaf layer (one
 global chain, `prev`/`next`/`parent`, fullness, every key against the
 `ST`/`INTERVAL` lattice, every value against `key * 2`) and every internal layer
-(chain from both ends, `flags`, `level`, fullness, separator keys).
+(chain from both ends, `flags`, `level`, parent/child ownership, fullness,
+separator keys). The root's parent must be zero, including a single-leaf root.
+Every other internal node must have an internal parent one level above it,
+whose child array references that node exactly once. Every child reference of
+an internal node, including child 0, must point to a node whose parent points
+back to that owner. These checks apply to both full templates and split images.
 
 A layout parameter that is not given is read off the file name.  A name that
 does not conform is an error, not a default: the layout cannot be recovered

@@ -9,6 +9,7 @@
 /*--------------------------- Forward Declarations ---------------------------*/
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx);
+static void _verify_parent_links(struct bptr *self, struct bptr_node *node);
 /*------------------------- Forward Declarations END -------------------------*/
 
 
@@ -75,6 +76,7 @@ void temp_full_verify(struct bptr *bptr,
    /*--------------------------- check leaf layer ----------------------------*/
    node = bptr_node_fetch(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch root");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->parent, "root parent != 0");
    // find leftmost leaf
    while (node->level != 0)
     {
@@ -240,7 +242,7 @@ void temp_full_verify(struct bptr *bptr,
    /*----------------------- check internal node layers ----------------------*/
    // The leaf layer has been traversed to its far right; walk every internal
    // layer from the extreme node left by the previous one, checking the sibling
-   // chain, flags/level, fill, and every separator key.
+   // chain, flags/level, parent/child relationships, fill, and every separator.
    _Bool ltr = 0;  // leaf node traversed to far right
    struct bptr_node dummy_n = { .node_idx = 0 }, *prior_n, *following_n;
    for (uint32_t level = 1; level < bptr->height; level++, ltr ^= 1)
@@ -272,6 +274,7 @@ void temp_full_verify(struct bptr *bptr,
                                       "internal node flags marked as leaf");
          TEST_ASSERT_EQUAL_UINT16_MESSAGE(level, node->level,
                                           "internal node level incorrect");
+         _verify_parent_links(bptr, node);
          if (!has_new_kv)
             TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->node_bound.brch.up - 1,
                                              node->key_count,
@@ -302,6 +305,44 @@ void temp_full_verify(struct bptr *bptr,
 
 
 /*---------------------------- Private Functions -----------------------------*/
+static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
+{
+   if (node->node_idx != self->root_idx)
+    {
+      struct bptr_node *parent;
+      uint32_t references = 0;
+
+      TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, node->parent,
+                                           "internal node parent == 0");
+      parent = bptr_node_fetch(self, node->parent);
+      TEST_ASSERT_NOT_NULL_MESSAGE(parent, "failed to fetch internal node parent");
+      TEST_ASSERT_FALSE_MESSAGE(parent->is_leaf, "internal node parent is a leaf");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t)node->level + 1, parent->level,
+                                       "internal node parent level incorrect");
+      /* Walking the sibling chain must not accept an orphan or a branch
+       * referenced twice, even when its stored parent index looks plausible. */
+      for (uint32_t i = 0; i <= parent->key_count; i++)
+         if (_node_brch_vals_get(self, parent, i) == node->node_idx) references++;
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, references,
+         "internal node parent must reference it exactly once");
+      bptr_node_unload(self, parent);
+    }
+
+   /* Also check ownership in the other direction, including child 0, which
+    * has no separator of its own. A child cannot silently belong to a
+    * different parent that happens to contain a reference to it as well. */
+   for (uint32_t i = 0; i <= node->key_count; i++)
+    {
+      struct bptr_node *child =
+         bptr_node_fetch(self, _node_brch_vals_get(self, node, i));
+      TEST_ASSERT_NOT_NULL_MESSAGE(child, "failed to fetch child for parent check");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, child->parent,
+                                       "child parent != its owning internal node");
+      bptr_node_unload(self, child);
+    }
+}
+
+
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx)
 {

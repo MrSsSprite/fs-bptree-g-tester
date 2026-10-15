@@ -20,6 +20,7 @@ check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits
 	python3 test/pointer_overflow.py $(BIN_DIR)/temp_gen $(BIN_DIR)/temp_verify
 	python3 tests/test_kv_overflow.py
 	python3 tests/test_verify_records.py
+	python3 tests/test_verify_parents.py
 
 $(TU_OBJ_DIR)/test_pointer_limits: test/pointer_limits.c src/temp_full.c \
                                  src/temp_full.h $(CORE_OBJS)
