@@ -13,6 +13,8 @@ static struct bptr_node *_fetch_checked(struct bptr *self, bptr_node_t idx);
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx);
 static void _verify_parent_links(struct bptr *self, struct bptr_node *node);
+static void _verify_shape(struct bptr *self, bptr_node_t idx,
+                          const struct temp_shape_node *shape, uint32_t level);
 static void _verify_lattice_record(int64_t *st, int64_t interval,
                                    _Bool *has_record, int64_t key, int64_t val);
 /*------------------------- Forward Declarations END -------------------------*/
@@ -45,62 +47,108 @@ void temp_full_verify(struct bptr *bptr,
                       unsigned int lay_cnt, int64_t st, int64_t interval,
                       _Bool has_new_kv, int64_t key, int64_t val)
 {
+   temp_verify(bptr, lay_cnt, st, interval, has_new_kv, key, val, NULL, NULL);
+}
+
+
+/* Custom occupancy paths refer to the original fixture. Only pristine images
+ * retain those exact paths; inserted images instead need explicit final totals. */
+void temp_verify(struct bptr *bptr,
+                  unsigned int lay_cnt, int64_t st, int64_t interval,
+                  _Bool has_new_kv, int64_t key, int64_t val,
+                  const struct temp_shape *shape,
+                  const struct temp_verify_expect *expected)
+{
    struct bptr_node *node, *par_n, *next_n;
    _Bool has_met_new_kv = 0, has_lattice_record = 0;
    uint64_t leaf_cnt = 0, leaf_record_cnt = 0;
    uint64_t expect_record_cnt, expect_leaf_cnt, expect_node_cnt = 1;
+   uint64_t visited_node_cnt;
+   _Bool custom_shape = shape != NULL && shape->override_count != 0;
 
    TEST_ASSERT_NOT_NULL_MESSAGE(bptr, "bptr == NULL");
+   TEST_ASSERT_TRUE_MESSAGE(has_new_kv || expected == NULL,
+      "expected result totals require an inserted record");
    if (lay_cnt == 0) return;
    /* A zero step is not a lattice. */
    TEST_ASSERT_NOT_EQUAL_INT64_MESSAGE(0, interval, "interval == 0");
-   TEST_ASSERT_EQUAL_UINT64_MESSAGE((uint64_t)lay_cnt + (has_new_kv ? 1u : 0u),
-                                    bptr->height, "height incorrect");
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(
+      has_new_kv && expected != NULL ? expected->height :
+         (uint64_t)lay_cnt + (has_new_kv ? 1u : 0u),
+      bptr->height, "height incorrect");
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, bptr->root_idx, "root_idx == 0");
 
    /* Derive the expected total from the original full-tree shape, without
     * trusting the file's record count, the visited leaf count or the lattice
     * walk. Keep this second safeguard independent of inserted-key detection. */
-   expect_record_cnt = bptr->node_bound.leaf.up - 1;
-   for (unsigned int level = 1; level < lay_cnt; level++)
+   if (custom_shape)
     {
-      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(
-         UINT64_MAX / bptr->node_bound.brch.up, expect_record_cnt,
-         "expected record count overflows");
-      expect_record_cnt *= bptr->node_bound.brch.up;
-      /* Horner's recurrence sums the nodes without forming an unused power
-       * one level beyond the tree: next = current * fanout + 1. */
-      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(
-         (UINT64_MAX - 1u) / bptr->node_bound.brch.up, expect_node_cnt,
-         "expected node count overflows");
-      expect_node_cnt = expect_node_cnt * bptr->node_bound.brch.up + 1u;
+      struct temp_shape_counts counts;
+      TEST_ASSERT_EQUAL_INT_MESSAGE(TEMP_FULL_OK,
+         temp_shape_count(shape, lay_cnt, bptr->is_lite, bptr->node_size,
+                           &counts), "invalid requested node occupancy");
+      expect_record_cnt = counts.records;
+      expect_leaf_cnt = counts.leaves;
+      expect_node_cnt = counts.nodes;
+      if (has_new_kv)
+         TEST_ASSERT_NOT_NULL_MESSAGE(expected,
+            "custom inserted image requires expected height, nodes and leaves");
     }
-   expect_leaf_cnt = expect_record_cnt / (bptr->node_bound.leaf.up - 1u);
+   else
+    {
+      expect_record_cnt = bptr->node_bound.leaf.up - 1;
+      for (unsigned int level = 1; level < lay_cnt; level++)
+       {
+         TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(
+            UINT64_MAX / bptr->node_bound.brch.up, expect_record_cnt,
+            "expected record count overflows");
+         expect_record_cnt *= bptr->node_bound.brch.up;
+         /* Sum nodes without an unused power beyond the original tree. */
+         TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(
+            (UINT64_MAX - 1u) / bptr->node_bound.brch.up, expect_node_cnt,
+            "expected node count overflows");
+         expect_node_cnt = expect_node_cnt * bptr->node_bound.brch.up + 1u;
+       }
+      expect_leaf_cnt = expect_record_cnt / (bptr->node_bound.leaf.up - 1u);
+    }
    if (has_new_kv)
     {
-      uint64_t added_nodes = (uint64_t)lay_cnt + 1u;
-
       TEST_ASSERT_LESS_THAN_UINT64_MESSAGE(UINT64_MAX, expect_record_cnt,
                                            "expected record count overflows");
       expect_record_cnt++;
-      /* The original leaf total cannot exceed the original record total. */
-      expect_leaf_cnt++;
-      TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(UINT64_MAX - added_nodes,
-                                               expect_node_cnt,
-                                               "expected node count overflows");
-      expect_node_cnt += added_nodes;
+      if (expected != NULL)
+       {
+         expect_leaf_cnt = expected->leaves;
+         expect_node_cnt = expected->nodes;
+       }
+      else
+       {
+         uint64_t added_nodes = (uint64_t)lay_cnt + 1u;
+         TEST_ASSERT_LESS_THAN_UINT64_MESSAGE(UINT64_MAX, expect_leaf_cnt,
+                                              "expected leaf count overflows");
+         expect_leaf_cnt++;
+         TEST_ASSERT_LESS_OR_EQUAL_UINT64_MESSAGE(UINT64_MAX - added_nodes,
+                                                  expect_node_cnt,
+                                                  "expected node count overflows");
+         expect_node_cnt += added_nodes;
+       }
     }
 
    /*--------------------------- check leaf layer ----------------------------*/
    node = _fetch_checked(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch root");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->parent, "root parent != 0");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->height - 1u, node->level,
+                                    "root level incorrect");
+   par_n = NULL;
    // find leftmost leaf
    while (node->level != 0)
     {
       par_n = node;
       node = _fetch_checked(bptr, _node_brch_vals_get(bptr, par_n, 0));
       TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch node");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(par_n->level - 1u, node->level,
+                                       "child node level incorrect");
       bptr_node_unload(bptr, par_n);
     }
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->prev, "prev of leftmost leaf");
@@ -113,7 +161,12 @@ void temp_full_verify(struct bptr *bptr,
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx,
                                        _node_brch_vals_get(bptr, par_n, 0),
                                        "par_n->vals[0] != node");
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(par_n->node_idx, node->parent,
+                                       "leaf parent != its parent");
     }
+   else
+      TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->next,
+                                       "leaf root has a next sibling");
    leaf_record_cnt = node->key_count;
    for (uint32_t i = 0; i < node->key_count; i++)
     {
@@ -235,6 +288,7 @@ void temp_full_verify(struct bptr *bptr,
    // The leaf layer has been traversed to its far right; walk every internal
    // layer from the extreme node left by the previous one, checking the sibling
    // chain, flags/level, parent/child relationships, fill, and every separator.
+   visited_node_cnt = leaf_cnt;
    _Bool ltr = 0;  // leaf node traversed to far right
    struct bptr_node dummy_n = { .node_idx = 0 }, *prior_n, *following_n;
    for (uint32_t level = 1; level < bptr->height; level++, ltr ^= 1)
@@ -263,10 +317,13 @@ void temp_full_verify(struct bptr *bptr,
          TEST_ASSERT_EQUAL_UINT16_MESSAGE(level, node->level,
                                           "internal node level incorrect");
          _verify_parent_links(bptr, node);
-         if (!has_new_kv)
+         if (!has_new_kv && !custom_shape)
             TEST_ASSERT_EQUAL_UINT32_MESSAGE(bptr->node_bound.brch.up - 1,
                                              node->key_count,
                                              "internal node not full");
+         TEST_ASSERT_LESS_THAN_UINT64_MESSAGE(UINT64_MAX, visited_node_cnt,
+                                              "visited node count overflows");
+         visited_node_cnt++;
          // TODO: checksum not implemented yet. SKIP that
          for (uint32_t i = 0; i < node->key_count; i++)
             TEST_ASSERT_EQUAL_INT64_MESSAGE(
@@ -286,13 +343,41 @@ void temp_full_verify(struct bptr *bptr,
 
       node = prior_n;  // extreme node of this layer, still loaded
     }
-   if (bptr->height > 1) bptr_node_unload(bptr, node);
-   // TODO: verify the remaining stats of `bptr`
+   bptr_node_unload(bptr, node);
+   TEST_ASSERT_EQUAL_UINT64_MESSAGE(expect_node_cnt, visited_node_cnt,
+                                    "traversed node count incorrect");
+   if (!has_new_kv)
+      _verify_shape(bptr, bptr->root_idx, shape == NULL ? NULL : shape->root,
+                     lay_cnt - 1u);
+   // TODO: checksum not implemented yet.
 }
 /*--------------------------- Public Functions END ---------------------------*/
 
 
 /*---------------------------- Private Functions -----------------------------*/
+/* Follow child positions rather than the sibling chain: occupancy overrides
+ * describe paths in the pristine tree and cannot identify post-split nodes. */
+static void _verify_shape(struct bptr *self, bptr_node_t idx,
+                          const struct temp_shape_node *shape, uint32_t level)
+{
+   struct bptr_node *node = _fetch_checked(self, idx);
+   uint32_t full_count = (level == 0 ? self->node_bound.leaf.up :
+                                      self->node_bound.brch.up) - 1u;
+
+   TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch node for shape check");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(level, node->level,
+                                    "requested node level incorrect");
+   TEST_ASSERT_EQUAL_UINT32_MESSAGE(temp_shape_keys(shape, full_count),
+                                    node->key_count,
+                                    "requested node key count incorrect");
+   if (level != 0)
+      for (uint32_t i = 0; i <= node->key_count; i++)
+         _verify_shape(self, _node_brch_vals_get(self, node, i),
+                        temp_shape_child(shape, i), level - 1u);
+   bptr_node_unload(self, node);
+}
+
+
 static void _verify_lattice_record(int64_t *st, int64_t interval,
                                    _Bool *has_record, int64_t key, int64_t val)
 {
@@ -415,6 +500,8 @@ static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
     {
       iter_n = _fetch_checked(self, _node_brch_vals_get(self, child_n, 0));
       TEST_ASSERT_NOT_NULL_MESSAGE(iter_n, "failed to fetch descendant node");
+      TEST_ASSERT_EQUAL_UINT32_MESSAGE(child_n->level - 1u, iter_n->level,
+                                       "descendant node level incorrect");
       bptr_node_unload(self, child_n);
       child_n = iter_n;
     }

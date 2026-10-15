@@ -1,7 +1,8 @@
 # Template utilities
 
-Three stand-alone programs that build, copy and check the perfectly full tree
-images the split tests are driven with:
+Three stand-alone programs that build, copy and check deterministic tree
+images for tests. Nodes are full by default; individual nodes can have explicit
+key counts:
 
 | Tool | Job |
 | --- | --- |
@@ -12,24 +13,24 @@ images the split tests are driven with:
 They sit on top of the library like a unit does, but they are not a unit: they
 are built into `bin/` by the root `make` and a test spawns them instead of
 linking their sources, so one generator/verifier serves every test and can be
-used from a shell.  `test/node_split/src/temp_full.{h,c}` still holds its own
-copy of the generator, copier and verifier on this branch; the unit is switched
-over to these tools -- and drops that copy -- on `test/n/sp/refactor/rm_temp`,
-which the merge reconciles.
+used from a shell. Split integration tests can use these tools to build full
+descendants beneath an existing ancestor with space; this checkout currently
+contains the cache and fflush test units.
 
 ## Building
 
 From the repository root, as everything in this repo is run:
 
 ```sh
-make            # every directory under test/ and utils/: three units + three tools
+make            # every directory under test/ and utils/
 make temp       # this utility alone
 make -C utils/temp check  # overflow boundaries and generator/verifier regressions
 ```
 
 `utils/temp/Makefile` includes `config.mk`, so the tools are compiled with the
 same flags as a unit and link the same `obj/core/*.o` objects.  Only
-`temp_verify` links Unity: its check is `temp_full_verify`, which asserts.
+`temp_verify` links Unity: its check is `temp_verify`, which asserts. The
+`temp_full_*` C entry points remain available as full-tree compatibility wrappers.
 
 `check` requires Python 3 and runs the C pointer/file-offset boundary tests and
 the executable regression suites.  They cover generated record bytes at the
@@ -60,6 +61,11 @@ capacities, one-key leaves, and the root exception in lite and normal layouts.
 It also rejects empty non-root nodes, extreme stored counts, forged parentless
 nodes trying to claim the root exception, and inconsistent leaf/branch flags.
 
+The shape suites cover asymmetric occupancy, canonical naming, reuse, invalid
+selectors, sparse count arithmetic, and independently encoded inserted images
+whose splits stop at an existing parent or below the root. `TEMP_GEN` and
+`TEMP_VERIFY` select alternate binaries for these executable regressions too.
+
 ## Name convention
 
 A template is
@@ -68,8 +74,19 @@ A template is
 <DIR>/<lay_cnt>-<st>-<interval>.bptr
 ```
 
-`temp_full_path()` (`src/temp_full.c`) is the single authority for that name: the
-generator writes it and the verifier reads `lay_cnt`/`st`/`interval` back off it.
+Custom occupancy adds a suffix before `.bptr`:
+
+```
+<DIR>/<lay_cnt>-<st>-<interval>--keys-root=4,0.1=3.bptr
+```
+
+`temp_path()` is the shared naming authority; `temp_full_path()` keeps the
+original full-tree form. The verifier recovers the lattice and original shape
+from either name. Override paths are sorted numerically, with ancestors before
+descendants, and decimal numbers have no leading zeroes. Explicit full counts
+remain in the suffix. Both filename component and full path limits are checked;
+names are never silently truncated.
+
 A trailing `/` of `<DIR>` is collapsed, so `bptr_files/temp/full/` and
 `bptr_files/temp/full` name the same file.  The layout (`is_lite`, `node_size`)
 is **not** part of the name, so two requests that differ only there share one
@@ -79,25 +96,37 @@ instead of serving it silently.
 ## `temp_gen`
 
 ```
-temp_gen [--dir DIR] [--norm] [--node-size N] LAY_CNT ST INTERVAL
+temp_gen [--dir DIR] [--norm] [--node-size N]
+         [--node-keys PATH=COUNT]... LAY_CNT ST INTERVAL
 ```
 
-Builds, or reuses, the perfectly full tree of `LAY_CNT` levels:
+Builds, or reuses, a tree of `LAY_CNT` levels:
 `LAY_CNT` 1 is a single leaf, keys are `ST, ST + INTERVAL, ...` laid down left to
-right, every value is the key times two, every leaf and every internal node but
-the last child is full, and every level forms one global doubly linked list.
+right, every value is the key times two, unspecified nodes are full, and every
+level forms one global doubly linked list.
 
 | Option | Meaning |
 | --- | --- |
 | `--dir DIR` | directory of the template (default `bptr_files/temp/full/`) |
 | `--norm` | 8-byte child pointer layout (default lite, 4-byte) |
 | `--node-size N` | size of a node in bytes (default 512) |
+| `--node-keys PATH=COUNT` | key count of one node; repeat for multiple nodes |
 | `-h`, `--help` | print the usage on stdout and exit 0 |
 
 Options come before the three numbers; option scanning stops at the first
 argument that is not one, so a negative `ST` is still read as the number it is.
 An empty `--dir` is a usage error.  The parent directories of the template are
 created as needed, also when `DIR` is absolute.
+
+`root` selects the root. A dot-separated path such as `0.1` selects child 1 of
+child 0; child positions are zero-based. Counts mean keys for both leaves and
+branches, so a branch with count `N` has `N + 1` children. Unspecified nodes
+stay full. Overrides are resolved together, so their option order has no effect.
+Duplicate canonical paths, malformed numbers, paths beyond the tree height,
+children removed by another override, and illegal occupancy are refused.
+The root requires at least one key; other nodes use the same occupancy bounds
+as the verifier. Syntax and duplicate errors exit 2; invalid shape requests
+exit 1 before directories or files are created or reused.
 
 When `--dir` is omitted the tool says so before it does anything else, so a
 caller that meant to pass a directory can see that it did not:
@@ -114,10 +143,15 @@ temp_gen: <path>: reused
 ```
 
 `: reused` means a complete template of that layout was already there and was
-left untouched.
+left untouched. For custom shapes, read-only reuse checks include original
+record/node totals and every requested or default node count. A previously
+modified instance cannot pass reuse merely by retaining the original file size.
 
 Before creating directories or creating/reusing an image, the generator counts
-the perfect tree's nodes as `1 + brch.up + ... + brch.up^(LAY_CNT - 1)`.
+the requested shape. A full tree has
+`1 + brch.up + ... + brch.up^(LAY_CNT - 1)` nodes. Custom shapes are counted
+through a sparse tree of overrides, aggregating untouched full subtrees
+arithmetically rather than enumerating them.
 It refuses a count above `UINT32_MAX` in lite mode or `UINT64_MAX` in normal
 mode. Child pointers (the values of internal nodes), parent and sibling pointers
 store **node indices**, not byte offsets; block 0 is the header, so the largest
@@ -145,8 +179,8 @@ temp_full_generate: interval is negative: a template's keys must ascend
 temp_full_generate: interval -2 descends; retry with interval 2 and st -79858 (interval * -1, from the last key of that lattice)
 ```
 
-`record_cnt` is the number of records that layout holds -- `leaf.up - 1` keys per
-leaf over `brch.up^(lay_cnt - 1)` leaves -- so the suggested start is the last
+`record_cnt` is the number of records the requested shape holds (for full trees,
+`leaf.up - 1` keys per leaf over `brch.up^(lay_cnt - 1)` leaves), so the suggested start is the last
 key of the refused lattice and the two requests hold the same keys.  The numbers
 are printed only when they can be computed: a layout that holds no tree, or an
 `int64_t` overflow, falls back to the symbolic recipe.
@@ -202,15 +236,17 @@ temp_inst: <DST>: copied
 ## `temp_verify`
 
 ```
-temp_verify [--lay-cnt N] [--st S] [--interval I] [--key K --val V] TEMPLATE...
+temp_verify [--lay-cnt N] [--st S] [--interval I]
+            [--node-keys PATH=COUNT]... [--key K --val V]
+            [--expect-height H --expect-nodes N --expect-leaves L] TEMPLATE...
 ```
 
 Loads every `TEMPLATE` with `bptr_load(path, 256, &cmp_i64)` and walks it with
-`temp_full_verify` inside the `RUN_TEST` frame its assertions need.  The check
+`temp_verify` inside the `RUN_TEST` frame its assertions need.  The check
 covers the height, the root, the record and node counts, the leaf layer (one
-global chain, `prev`/`next`/`parent`, fullness, every key against the
+global chain, `prev`/`next`/`parent`, occupancy, every key against the
 `ST`/`INTERVAL` lattice, every value against `key * 2`) and every internal layer
-(chain from both ends, `flags`, `level`, parent/child ownership, fullness,
+(chain from both ends, `flags`, `level`, parent/child ownership, occupancy,
 separator keys). The root's parent must be zero, including a single-leaf root.
 Every other internal node must have an internal parent one level above it,
 whose child array references that node exactly once. Every child reference of
@@ -221,21 +257,37 @@ A layout parameter that is not given is read off the file name.  A name that
 does not conform is an error, not a default: the layout cannot be recovered
 from the image itself.  The lattice may start at any key `ST`, not only at 0;
 an `INTERVAL` of 0 is a parameter error (exit 2) because a lattice cannot step
-by nothing.  `--key`/`--val` (both or neither) tell the checker that one record
-was inserted -- how a split instance is checked: it then expects `lay_cnt + 1`
-levels and requires that record exactly once. Independently, it sums every
-leaf's record count and checks the physical total and the header record count
-against `(leaf.up - 1) * brch.up^(LAY_CNT - 1)`, plus one when an inserted record
-is expected. Computing that expected total uses checked arithmetic and does
-not depend on the number of leaves visited, the key lattice walk or the header
-record count.
+by nothing. `--key`/`--val` (both or neither) tell the checker that one record
+was inserted and require that record exactly once. For full-tree requests,
+the original expectation of `lay_cnt + 1` levels and `lay_cnt + 1` added nodes
+remains the default.
+
+Occupancy is recovered from the filename even when all three lattice parameters
+are supplied explicitly. If any `--node-keys` options are given, their complete
+set replaces the filename-derived shape; they are never merged. These paths
+always describe the original fixture, because child positions can change after
+a split. An arbitrary instance filename can be checked by passing all lattice
+parameters and the original occupancy overrides explicitly.
+
+For a custom shape with an inserted record, all three `--expect-height`,
+`--expect-nodes` and `--expect-leaves` options are required. They specify final
+totals, not increments. The options must be given together and are only valid
+with `--key`/`--val`. They are also available to override full-tree inserted
+expectations. Without an inserted record, the checker requires exact requested
+occupancy at every original path.
+
+Independently, the verifier sums every leaf's record count and checks the
+physical total and header record count against the original shape's calculated
+record total, plus one for an inserted record. It compares the expected node
+total with both the header and the actual traversal. These calculations use
+checked arithmetic and do not depend on the key lattice walk or header counts.
 
 Lattice-key addition and doubling an original key are checked before they are
 evaluated; an unrepresentable key or doubled value fails verification (exit 1).
 The expected key advances only when another original record is visited, so an
 unused step after the final key need not fit `int64_t`. Inserted records do not
 advance the original lattice, and their values are checked against `--val`.
-Leaf and node totals are checked against the full-tree geometry using checked
+Leaf and node totals are checked against the requested geometry using checked
 unsigned arithmetic, without multiplying counts by `INTERVAL` or subtracting
 signed key endpoints. A valid template whose intermediate count-times-interval
 product would exceed `int64_t` is therefore still accepted.
@@ -245,19 +297,18 @@ If a leaf's maximum is `L = leaf.up - 1`, a non-root leaf must hold between
 `ceil(L / 2)` and `L` records. A branch's maximum is `B = brch.up` children;
 a non-root branch must hold between `ceil(B / 2) - 1` and `B - 1` keys.
 The root of these nonempty images may hold as few as one key. These are legal
-bounds rather than a requirement for one exact split distribution. Full
-templates still undergo the existing fullness and record-total checks.
+bounds rather than a requirement for one exact split distribution. Pristine
+templates also undergo exact requested occupancy and record-total checks.
 The verifier reads each node's persisted count before fetching it through the
 library, because decoding an overfull node could otherwise overrun its arrays.
 It also requires every visited node's `VALID` flag and checks that its `LEAF`
 flag agrees with its level, including both leaves produced by a split.
 
-The name is read as three decimal numbers, so a spelling the generator would
-never write -- `01-0-16.bptr` -- is accepted as well.  A caller that needs the
-canonical `<lay_cnt>-<st>-<interval>.bptr` name (the split unit's directory
-loader is one) should pass the layout explicitly with
-`--lay-cnt`/`--st`/`--interval` instead.  A name that does not conform ends the
-run there, so the templates listed after it are not checked at all.
+The name reader accepts noncanonical decimal spellings such as
+`01-0-16.bptr` and normalizes shape selectors. When the name cannot supply the
+request, pass `--lay-cnt`/`--st`/`--interval` and any occupancy overrides
+explicitly. A required name that does not conform ends the run there, so the
+templates listed after it are not checked at all.
 
 ```
 temp_verify: <path>: ok
@@ -291,10 +342,55 @@ rm -rf /tmp/tpl
 ./bin/temp_inst /tmp/tpl/1-0-16.bptr /tmp/tpl/inst/a.bptr   # exit 1
 ```
 
+For a leaf split absorbed by an existing parent, leave the root one key short
+of full and keep its leaves full. With 128-byte nodes, a lite branch holds at
+most five keys and a normal branch holds at most three:
+
+```sh
+./bin/temp_gen --dir /tmp/occupancy/lite --node-size 128 --node-keys root=4 2 0 16
+./bin/temp_gen --dir /tmp/occupancy/normal --norm --node-size 128 --node-keys root=2 2 0 16
+./bin/temp_verify /tmp/occupancy/lite/2-0-16--keys-root=4.bptr
+./bin/temp_verify /tmp/occupancy/normal/2-0-16--keys-root=2.bptr
+```
+
+For a partial cascade absorbed below the root, use four levels and reduce only
+child 0 of the root. Its full leaf and full leaf-parent can split into that
+existing grandparent without changing the root:
+
+```sh
+./bin/temp_gen --dir /tmp/occupancy/lite --node-size 128 --node-keys 0=4 4 0 16
+./bin/temp_gen --dir /tmp/occupancy/normal --norm --node-size 128 --node-keys 0=2 4 0 16
+./bin/temp_verify /tmp/occupancy/lite/4-0-16--keys-0=4.bptr
+./bin/temp_verify /tmp/occupancy/normal/4-0-16--keys-0=2.bptr
+```
+
+After a separate test inserts key `1` with value `2` into a copy of the
+two-level lite fixture, the final height is 2, node count 7, and leaf count 6:
+
+```sh
+./bin/temp_verify --lay-cnt 2 --st 0 --interval 16 --node-keys root=4 \
+  --key 1 --val 2 --expect-height 2 --expect-nodes 7 --expect-leaves 6 \
+  /tmp/occupancy/instance.bptr
+```
+
+The utilities generate and check these shapes; they do not perform the split.
+
+## C entry points
+
+`temp_shape.h` defines `struct temp_shape`, `struct temp_shape_counts`, and
+`struct temp_verify_expect`. Zero-initialize a shape, add overrides with
+`temp_shape_add`, then use `temp_shape_count`, `temp_path`, `temp_generate`, or
+`temp_verify`. `temp_parse_name` recovers the original request from a name.
+Release shape storage with `temp_shape_free`. Shape pointers passed to the
+generator and verifier are borrowed; their callers retain ownership. The
+verifier expects a Unity assertion frame. Existing `temp_full_path`,
+`temp_full_generate`, and `temp_full_verify` retain their signatures and
+full-tree behavior.
+
 ## Limits
 
 - The generator serves `lay_cnt` 1..254: one node stays pinned per level while
-  its subtree is filled and the cache holds 256 slots.  Image size grows as
+  its subtree is filled and the cache holds 256 slots. Full-tree image size grows as
   `brch.up^(lay_cnt - 1)`, so realistic heights are 1..4 -- for the default
   lite 512-byte layout (`leaf.up` 29, `brch.up` 38) 1/2/3 levels produce
   1/39/1483 nodes and 1 024/20 480/759 808 bytes.

@@ -25,6 +25,7 @@ check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits $(TU_OBJ_DIR)/test_shape_limits
 	python3 tests/test_verify_parents.py
 	python3 tests/test_verify_overflow.py
 	python3 tests/test_verify_occupancy.py
+	python3 tests/test_shapes.py
 
 $(TU_OBJ_DIR)/test_pointer_limits: test/pointer_limits.c src/temp_full.c \
                                  src/temp_full.h src/temp_shape.h $(SHAPE_OBJ) $(CORE_OBJS)
