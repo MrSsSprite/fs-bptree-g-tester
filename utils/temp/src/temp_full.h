@@ -138,6 +138,8 @@ int temp_instantiate(const char *dst, const char *src);
  * Lattice additions, doubled original values and expected counts are checked
  * before evaluation. Only stored keys must fit: the unused step after the
  * final original key is never computed, including in a split image.
+ * Each node must satisfy its occupancy bounds, including the root exception;
+ * persisted counts are checked before the library decodes key/value arrays.
  *
  * Asserts with fixed messages, so it is only callable from inside a Unity case
  * (`RUN_TEST' installs the abort frame an assertion longjmps to).  The

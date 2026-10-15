@@ -54,6 +54,10 @@ boundary keys and arbitrary inserted values. Run the same suite with
 to check that valid boundary fixtures perform no overflowing intermediate
 arithmetic. The core objects can remain uninstrumented.
 
+The occupancy suite builds independent split images with correct record totals,
+links and separators. It checks leaf and branch minima/maxima, odd and even
+capacities, one-key leaves, and the root exception in lite and normal layouts.
+
 ## Name convention
 
 A template is
@@ -233,6 +237,16 @@ Leaf and node totals are checked against the full-tree geometry using checked
 unsigned arithmetic, without multiplying counts by `INTERVAL` or subtracting
 signed key endpoints. A valid template whose intermediate count-times-interval
 product would exceed `int64_t` is therefore still accepted.
+
+Every visited node is checked for legal occupancy, including split instances.
+If a leaf's maximum is `L = leaf.up - 1`, a non-root leaf must hold between
+`ceil(L / 2)` and `L` records. A branch's maximum is `B = brch.up` children;
+a non-root branch must hold between `ceil(B / 2) - 1` and `B - 1` keys.
+The root of these nonempty images may hold as few as one key. These are legal
+bounds rather than a requirement for one exact split distribution. Full
+templates still undergo the existing fullness and record-total checks.
+The verifier reads each node's persisted count before fetching it through the
+library, because decoding an overfull node could otherwise overrun its arrays.
 
 The name is read as three decimal numbers, so a spelling the generator would
 never write -- `01-0-16.bptr` -- is accepted as well.  A caller that needs the

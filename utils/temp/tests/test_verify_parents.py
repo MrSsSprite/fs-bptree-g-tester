@@ -197,12 +197,18 @@ class VerifierParents(unittest.TestCase):
             original = self.generated(normal)
             branches = original.branches(1)
             target = branches[len(branches) // 2]
-            for parent in (len(original.data) // NODE_SIZE + 1,
-                           original.children(target)[0], target):
+            # Metadata preflight rejects an unreadable parent before the
+            # ownership check can report a parent-specific diagnostic.
+            for parent, message in (
+                (len(original.data) // NODE_SIZE + 1,
+                 "failed to read node for occupancy check"),
+                (original.children(target)[0], "parent"),
+                (target, "parent"),
+            ):
                 with self.subTest(normal=normal, parent=parent):
                     image = Image(original.data)
                     image.set_parent(target, parent)
-                    self.assert_rejected(image)
+                    self.assert_rejected(image, message)
 
     def test_parent_must_reference_branch_exactly_once(self):
         for normal in (False, True):

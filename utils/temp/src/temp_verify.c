@@ -2,11 +2,14 @@
 #include "temp_full.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
+#include "bptr_io.h"
 #include "unity.h"
+#include <string.h>
 /*--------------------------- Private Includes END ---------------------------*/
 
 
 /*--------------------------- Forward Declarations ---------------------------*/
+static struct bptr_node *_fetch_checked(struct bptr *self, bptr_node_t idx);
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx);
 static void _verify_parent_links(struct bptr *self, struct bptr_node *node);
@@ -31,6 +34,8 @@ static void _verify_lattice_record(int64_t *st, int64_t interval,
  * `has_new_kv' the verifier expects `height == lay_cnt + 1' and requires that
  * record exactly once. The physical leaf-record total and the header count
  * must independently match the full-tree geometry plus the inserted record.
+ * Every visited node must also satisfy its legal occupancy bounds, with the
+ * lower root minimum, before the library decodes its key/value arrays.
  *
  * @note  It asserts through Unity and needs the abort frame `RUN_TEST' installs;
  *        a failing check longjmps out, which is what makes the caller's case
@@ -87,14 +92,14 @@ void temp_full_verify(struct bptr *bptr,
     }
 
    /*--------------------------- check leaf layer ----------------------------*/
-   node = bptr_node_fetch(bptr, bptr->root_idx);
+   node = _fetch_checked(bptr, bptr->root_idx);
    TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch root");
    TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, node->parent, "root parent != 0");
    // find leftmost leaf
    while (node->level != 0)
     {
       par_n = node;
-      node = bptr_node_fetch(bptr, _node_brch_vals_get(bptr, par_n, 0));
+      node = _fetch_checked(bptr, _node_brch_vals_get(bptr, par_n, 0));
       TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch node");
       bptr_node_unload(bptr, par_n);
     }
@@ -103,7 +108,7 @@ void temp_full_verify(struct bptr *bptr,
    if (bptr->height > 1)
     {
       TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, node->parent, "leaf parent == 0");
-      par_n = bptr_node_fetch(bptr, node->parent);
+      par_n = _fetch_checked(bptr, node->parent);
       TEST_ASSERT_NOT_NULL_MESSAGE(par_n, "failed to fetch parent of leaf");
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx,
                                        _node_brch_vals_get(bptr, par_n, 0),
@@ -144,7 +149,7 @@ void temp_full_verify(struct bptr *bptr,
    leaf_cnt = 1;
    for (uint32_t i = 1; node->next; i++)
     {
-      next_n = bptr_node_fetch(bptr, node->next);
+      next_n = _fetch_checked(bptr, node->next);
       /* the fetch of the next sibling is dereferenced below: a cache too small
        * for the walk has to fail the check, not crash inside it */
       TEST_ASSERT_NOT_NULL_MESSAGE(next_n, "failed to load next node");
@@ -152,7 +157,7 @@ void temp_full_verify(struct bptr *bptr,
        {
          struct bptr_node *next_par_n;
          TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, par_n->next, "par next == 0");
-         next_par_n = bptr_node_fetch(bptr, par_n->next);
+         next_par_n = _fetch_checked(bptr, par_n->next);
          TEST_ASSERT_NOT_NULL_MESSAGE(next_par_n, "failed to load next parent");
          bptr_node_unload(bptr, par_n);
          par_n = next_par_n;
@@ -238,7 +243,7 @@ void temp_full_verify(struct bptr *bptr,
       // layers from the extreme node left by the previous (reverse) pass
       if (node->parent != 0)
        {
-         struct bptr_node *tmp_n = bptr_node_fetch(bptr, node->parent);
+         struct bptr_node *tmp_n = _fetch_checked(bptr, node->parent);
          TEST_ASSERT_NOT_NULL_MESSAGE(tmp_n, "failed to fetch parent node");
          bptr_node_unload(bptr, node);
          node = tmp_n;
@@ -248,7 +253,7 @@ void temp_full_verify(struct bptr *bptr,
       while (node != &dummy_n)
        {
          bptr_node_t following_i = ltr ? node->next : node->prev;
-         following_n = following_i ? bptr_node_fetch(bptr, following_i)
+         following_n = following_i ? _fetch_checked(bptr, following_i)
                                    : &dummy_n;
          TEST_ASSERT_NOT_NULL_MESSAGE(following_n, "failed to fetch node");
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(ltr ? node->prev : node->next,
@@ -326,7 +331,7 @@ static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
 
       TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, node->parent,
                                            "internal node parent == 0");
-      parent = bptr_node_fetch(self, node->parent);
+      parent = _fetch_checked(self, node->parent);
       TEST_ASSERT_NOT_NULL_MESSAGE(parent, "failed to fetch internal node parent");
       TEST_ASSERT_FALSE_MESSAGE(parent->is_leaf, "internal node parent is a leaf");
       TEST_ASSERT_EQUAL_UINT32_MESSAGE((uint32_t)node->level + 1, parent->level,
@@ -346,7 +351,7 @@ static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
    for (uint32_t i = 0; i <= node->key_count; i++)
     {
       struct bptr_node *child =
-         bptr_node_fetch(self, _node_brch_vals_get(self, node, i));
+         _fetch_checked(self, _node_brch_vals_get(self, node, i));
       TEST_ASSERT_NOT_NULL_MESSAGE(child, "failed to fetch child for parent check");
       TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->node_idx, child->parent,
                                        "child parent != its owning internal node");
@@ -354,6 +359,41 @@ static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
     }
 }
 
+
+/**
+ * Check the persisted count before bptr_node_fetch unmarshals any arrays: the
+ * loader trusts key_count, so checking an overfull node after fetching it can
+ * already be too late. This verifier only reads freshly loaded file images.
+ *
+ * A leaf holds at most L = leaf.up - 1 records and needs ceil(L / 2) records.
+ * A branch holds at most B = brch.up children and needs ceil(B / 2) children,
+ * hence ceil(B / 2) - 1 keys. Derive minima from capacities independently of
+ * the library's low bounds. The root of these nonempty images needs one key;
+ * identify it by root_idx, never by a possibly incorrect parent pointer.
+ */
+static struct bptr_node *_fetch_checked(struct bptr *self, bptr_node_t idx)
+{
+   uint16_t level;
+   uint32_t count;
+   uint_fast32_t minimum, maximum;
+
+   TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, idx, "cannot fetch node 0");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_io_fread_node(self, idx),
+                                 "failed to read node for occupancy check");
+   memcpy(&level, (char*)self->fbuf + 2, sizeof level);
+   memcpy(&count, (char*)self->fbuf + 4, sizeof count);
+   maximum = (level == 0 ? self->node_bound.leaf.up :
+                          self->node_bound.brch.up) - 1;
+   minimum = level == 0 ? self->node_bound.leaf.up / 2 :
+                         (self->node_bound.brch.up - 1) / 2;
+   if (idx == self->root_idx) minimum = 1;
+
+   TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(maximum, count,
+      level == 0 ? "leaf node overfull" : "internal node overfull");
+   TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(minimum, count,
+      level == 0 ? "leaf node underfilled" : "internal node underfilled");
+   return bptr_node_fetch(self, idx);
+}
 
 static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
                                  uint32_t idx)
@@ -363,12 +403,12 @@ static int64_t _find_correct_key(struct bptr *self, struct bptr_node *node,
 
    // The ith key of an internal node is the 0th key of the leftmost descendant
    // leaf of the (i+1)th child of the internal node.
-   child_n = bptr_node_fetch(self, _node_brch_vals_get(self, node, idx + 1));
+   child_n = _fetch_checked(self, _node_brch_vals_get(self, node, idx + 1));
    TEST_ASSERT_NOT_NULL_MESSAGE(child_n, "failed to fetch child node");
 
    while (!child_n->is_leaf)
     {
-      iter_n = bptr_node_fetch(self, _node_brch_vals_get(self, child_n, 0));
+      iter_n = _fetch_checked(self, _node_brch_vals_get(self, child_n, 0));
       TEST_ASSERT_NOT_NULL_MESSAGE(iter_n, "failed to fetch descendant node");
       bptr_node_unload(self, child_n);
       child_n = iter_n;
