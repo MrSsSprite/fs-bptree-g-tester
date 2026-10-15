@@ -260,10 +260,6 @@ void temp_full_verify(struct bptr *bptr,
                                           prior_n->node_idx,
                                           "internal node chain broken");
          TEST_ASSERT_FALSE_MESSAGE(node->is_leaf, "internal node is_leaf true");
-         TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, node->flags,
-                                       "internal node flags not valid");
-         TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, node->flags,
-                                      "internal node flags marked as leaf");
          TEST_ASSERT_EQUAL_UINT16_MESSAGE(level, node->level,
                                           "internal node level incorrect");
          _verify_parent_links(bptr, node);
@@ -361,8 +357,8 @@ static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
 
 
 /**
- * Check the persisted count before bptr_node_fetch unmarshals any arrays: the
- * loader trusts key_count, so checking an overfull node after fetching it can
+ * Check persisted flags and count before bptr_node_fetch unmarshals arrays.
+ * The loader trusts key_count, so checking an overfull node after fetching it can
  * already be too late. This verifier only reads freshly loaded file images.
  *
  * A leaf holds at most L = leaf.up - 1 records and needs ceil(L / 2) records.
@@ -373,15 +369,24 @@ static void _verify_parent_links(struct bptr *self, struct bptr_node *node)
  */
 static struct bptr_node *_fetch_checked(struct bptr *self, bptr_node_t idx)
 {
-   uint16_t level;
+   uint16_t flags, level;
    uint32_t count;
    uint_fast32_t minimum, maximum;
 
    TEST_ASSERT_NOT_EQUAL_UINT64_MESSAGE(0, idx, "cannot fetch node 0");
    TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_io_fread_node(self, idx),
                                  "failed to read node for occupancy check");
+   memcpy(&flags, self->fbuf, sizeof flags);
    memcpy(&level, (char*)self->fbuf + 2, sizeof level);
    memcpy(&count, (char*)self->fbuf + 4, sizeof count);
+   TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_VALID, flags,
+      level == 0 ? "leaf node flags not valid" : "internal node flags not valid");
+   if (level == 0)
+      TEST_ASSERT_BITS_HIGH_MESSAGE(BPTR_NODE_FLAG_LEAF, flags,
+                                    "leaf node flags not marked as leaf");
+   else
+      TEST_ASSERT_BITS_LOW_MESSAGE(BPTR_NODE_FLAG_LEAF, flags,
+                                   "internal node flags marked as leaf");
    maximum = (level == 0 ? self->node_bound.leaf.up :
                           self->node_bound.brch.up) - 1;
    minimum = level == 0 ? self->node_bound.leaf.up / 2 :

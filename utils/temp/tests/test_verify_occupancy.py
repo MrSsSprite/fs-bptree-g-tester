@@ -197,6 +197,61 @@ class VerifierOccupancy(unittest.TestCase):
                     image.set_count(data, index, image.children_max)
                     self.assert_rejected(data, "internal node overfull", levels=2)
 
+    def test_extreme_counts_are_rejected_before_decoding(self):
+        for normal in (False, True):
+            image = Image(normal, 128)
+            for levels, index, kind in ((0, 1, "leaf"), (1, 2, "leaf"),
+                                        (1, 3, "leaf"), (2, 1, "internal"),
+                                        (2, 2, "internal"), (2, 3, "internal")):
+                with self.subTest(normal=normal, levels=levels, index=index):
+                    data = image.split(levels) if levels else image.template()
+                    image.set_count(data, index, (1 << 32) - 1)
+                    self.assert_rejected(data, f"{kind} node overfull",
+                                         levels=levels or 1, inserted=bool(levels))
+
+    def test_empty_nonroot_nodes_are_rejected(self):
+        for normal in (False, True):
+            image = Image(normal, 128)
+            for levels, index, kind in ((1, 2, "leaf"), (1, 3, "leaf"),
+                                        (2, 2, "internal"), (2, 3, "internal")):
+                with self.subTest(normal=normal, levels=levels, index=index):
+                    data = image.split(levels)
+                    image.set_count(data, index, 0)
+                    self.assert_rejected(data, f"{kind} node underfilled", levels=levels)
+
+    def test_zero_parent_does_not_grant_root_occupancy_exception(self):
+        for normal in (False, True):
+            image = Image(normal, 512)
+            for levels, index, kind in ((1, 2, "leaf"), (1, 3, "leaf"),
+                                        (2, 2, "internal"), (2, 3, "internal")):
+                with self.subTest(normal=normal, levels=levels, index=index):
+                    data = image.split(levels)
+                    image.set_count(data, index, 1)
+                    struct.pack_into("=" + image.pointer, data, image.size * index + 12, 0)
+                    self.assert_rejected(data, f"{kind} node underfilled", levels=levels)
+
+    def test_leaf_flags_are_checked_on_root_and_both_split_leaves(self):
+        for normal in (False, True):
+            image = Image(normal, 128)
+            for index in (1, 2, 3):
+                for flags, message in ((2, "leaf node flags not valid"),
+                                       (1, "leaf node flags not marked as leaf")):
+                    with self.subTest(normal=normal, index=index, flags=flags):
+                        data = image.template() if index == 1 else image.split()
+                        struct.pack_into("=H", data, image.size * index, flags)
+                        self.assert_rejected(data, message, inserted=index != 1)
+
+    def test_internal_flags_still_checked_on_root_and_both_split_branches(self):
+        for normal in (False, True):
+            image = Image(normal, 128)
+            for index in (1, 2, 3):
+                for flags, message in ((0, "internal node flags not valid"),
+                                       (3, "internal node flags marked as leaf")):
+                    with self.subTest(normal=normal, index=index, flags=flags):
+                        data = image.split(2)
+                        struct.pack_into("=H", data, image.size * index, flags)
+                        self.assert_rejected(data, message, levels=2)
+
 
 if __name__ == "__main__":
     unittest.main()

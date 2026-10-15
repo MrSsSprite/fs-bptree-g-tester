@@ -57,6 +57,8 @@ arithmetic. The core objects can remain uninstrumented.
 The occupancy suite builds independent split images with correct record totals,
 links and separators. It checks leaf and branch minima/maxima, odd and even
 capacities, one-key leaves, and the root exception in lite and normal layouts.
+It also rejects empty non-root nodes, extreme stored counts, forged parentless
+nodes trying to claim the root exception, and inconsistent leaf/branch flags.
 
 ## Name convention
 
@@ -247,6 +249,8 @@ bounds rather than a requirement for one exact split distribution. Full
 templates still undergo the existing fullness and record-total checks.
 The verifier reads each node's persisted count before fetching it through the
 library, because decoding an overfull node could otherwise overrun its arrays.
+It also requires every visited node's `VALID` flag and checks that its `LEAF`
+flag agrees with its level, including both leaves produced by a split.
 
 The name is read as three decimal numbers, so a spelling the generator would
 never write -- `01-0-16.bptr` -- is accepted as well.  A caller that needs the
