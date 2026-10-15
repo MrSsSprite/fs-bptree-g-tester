@@ -118,15 +118,69 @@ argument that is not one, so a negative `ST` is still read as the number it is.
 An empty `--dir` is a usage error.  The parent directories of the template are
 created as needed, also when `DIR` is absolute.
 
-`root` selects the root. A dot-separated path such as `0.1` selects child 1 of
-child 0; child positions are zero-based. Counts mean keys for both leaves and
-branches, so a branch with count `N` has `N + 1` children. Unspecified nodes
-stay full. Overrides are resolved together, so their option order has no effect.
+### Using `--node-keys PATH=COUNT`
+
+`--node-keys PATH=COUNT` sets the **number of keys in one node**. Nodes you do
+not specify remain full. The path starts at the root and follows zero-based
+child positions:
+
+| Override | Meaning |
+| --- | --- |
+| `root=4` | The root holds 4 keys. |
+| `0=2` | The root's first child holds 2 keys. |
+| `0.1=2` | The second child of the root's first child holds 2 keys. |
+
+For a leaf, `COUNT` is its number of records. For an internal node, `COUNT`
+keys means `COUNT + 1` children. The node's position in the requested tree
+determines whether it is a leaf or an internal node.
+
+Run these commands from the repository root. This two-level tree has a root
+with room for one more key and full leaves:
+
+```sh
+./bin/temp_gen --node-size 128 --node-keys root=4 2 0 16
+```
+
+The final three arguments, `2 0 16`, mean two levels, starting key `0`, and
+key interval `16`. With this lite 128-byte layout, internal nodes hold at most
+5 keys and leaves hold at most 4 records. `root=4` therefore gives the root
+5 children, all full leaves.
+
+Repeat the option to control several nodes:
+
+```sh
+./bin/temp_gen --node-size 128 \
+  --node-keys root=1 \
+  --node-keys 0=2 \
+  --node-keys 0.1=2 \
+  3 0 16
+```
+
+This creates a three-level tree with two root children, three children under
+internal node `0`, and two records in leaf `0.1`. All other nodes remain full.
+Overrides are resolved together, so their option order has no effect. Paths
+must exist after all overrides have been applied: for example, `root=1`
+creates only children `0` and `1`, so an override for child `2` would be invalid.
+
 Duplicate canonical paths, malformed numbers, paths beyond the tree height,
 children removed by another override, and illegal occupancy are refused.
 The root requires at least one key; other nodes use the same occupancy bounds
 as the verifier. Syntax and duplicate errors exit 2; invalid shape requests
 exit 1 before directories or files are created or reused.
+
+The generated filename includes the overrides, so verification normally needs
+no extra flags. For the first example above:
+
+```sh
+./bin/temp_verify bptr_files/temp/full/2-0-16--keys-root=4.bptr
+```
+
+For `temp_verify`, explicit `--node-keys` options replace the complete
+filename-derived override set. These paths always describe the **original
+fixture before insertion**. Custom inserted images also require the expected
+final totals described in the [`temp_verify` section](#temp_verify).
+
+### Generation and reuse
 
 When `--dir` is omitted the tool says so before it does anything else, so a
 caller that meant to pass a directory can see that it did not:
