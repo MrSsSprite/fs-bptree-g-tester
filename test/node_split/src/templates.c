@@ -14,7 +14,7 @@
 /* How `_parse_name' reads a file name; `templates_load_dir' names the two
  * failures apart in the reason it hands back. */
 #define _NAME_OK      (0)
-#define _NAME_BAD     (-1)  /* not `<lay_cnt>-<st>-<interval>.bptr' */
+#define _NAME_BAD     (-1)  /* not a canonical full/custom fixture name */
 #define _NAME_LAY_CNT (-2)  /* the convention, but with lay_cnt 0 */
 /*---------------------------- Private Defines END ----------------------------*/
 
@@ -22,8 +22,8 @@
 /*--------------------------- Forward Declarations ---------------------------*/
 static int _cmp_template(const void *lhs, const void *rhs);
 static int _join(char *buf, size_t size, const char *dir, const char *name);
-static int _parse_name(const char *name, unsigned int *lay_cnt, int64_t *st,
-                       int64_t *interval);
+static int _parse_name(const char *name, struct template *tmpl);
+static void _free_list(struct template *list, size_t cnt);
 static void _reason(char *buf, size_t size, const char *fmt, ...);
 static void _set_list(struct template *list, size_t cnt);
 /*------------------------- Forward Declarations END -------------------------*/
@@ -58,7 +58,7 @@ int templates_load_dir(const char *dir, char *reason, size_t size)
    while ((de = readdir(dp)) != NULL)
     {
       char path[PATH_MAX];
-      struct template tmpl;
+      struct template tmpl = {0};
       size_t len = strlen(de->d_name);
       int status;
 
@@ -68,24 +68,23 @@ int templates_load_dir(const char *dir, char *reason, size_t size)
 
       if (_join(path, sizeof path, dir, de->d_name) != 0)
        {
-         closedir(dp);
-         free(list);
          _reason(reason, size, "%s/%s: the path is longer than %d bytes", dir,
                  de->d_name, PATH_MAX);
+         closedir(dp);
+         _free_list(list, cnt);
          return TEMPLATES_E_NAME;
        }
 
-      status = _parse_name(de->d_name, &tmpl.lay_cnt, &tmpl.st,
-                           &tmpl.interval);
+      status = _parse_name(de->d_name, &tmpl);
       if (status != _NAME_OK)
        {
          closedir(dp);
-         free(list);
+         _free_list(list, cnt);
          if (status == _NAME_LAY_CNT)
             _reason(reason, size, "%s: lay_cnt 0 does not name a template",
                     path);
          else
-            _reason(reason, size, "%s is not a <lay_cnt>-<st>-<interval>.bptr "
+            _reason(reason, size, "%s is not a canonical full or custom "
                     "template name", path);
          return TEMPLATES_E_NAME;
        }
@@ -95,11 +94,13 @@ int templates_load_dir(const char *dir, char *reason, size_t size)
          struct template *grown;
          size_t next = cap == 0 ? 8 : cap * 2;
 
-         grown = realloc(list, next * sizeof *grown);
+         grown = cap > SIZE_MAX / 2 || next > SIZE_MAX / sizeof *grown
+                   ? NULL : realloc(list, next * sizeof *grown);
          if (grown == NULL)
           {
             closedir(dp);
-            free(list);
+            temp_shape_free(&tmpl.shape);
+            _free_list(list, cnt);
             _reason(reason, size, "out of memory");
             return TEMPLATES_E_ALLOC;
           }
@@ -115,7 +116,7 @@ int templates_load_dir(const char *dir, char *reason, size_t size)
    if (closedir(dp) != 0)
     {
       int err = errno;
-      free(list);
+      _free_list(list, cnt);
       _reason(reason, size, "cannot read the directory %s: %s", dir,
               strerror(err));
       return TEMPLATES_E_DIR;
@@ -123,9 +124,9 @@ int templates_load_dir(const char *dir, char *reason, size_t size)
 
    if (cnt == 0)
     {
-      free(list);
+      _free_list(list, cnt);
       _reason(reason, size,
-              "no <lay_cnt>-<st>-<interval>.bptr template in %s", dir);
+              "no full or custom .bptr template in %s", dir);
       return TEMPLATES_E_EMPTY;
     }
 
@@ -144,10 +145,16 @@ const struct template *templates_get(size_t *cnt)
 }
 
 
+void templates_cleanup(void)
+{
+   _set_list(NULL, 0);
+}
+
+
 int cmp_i64(const void *lhs, const void *rhs)
 {
-   int64_t diff = *(const int64_t *)lhs - *(const int64_t *)rhs;
-   return diff < 0 ? -1 : diff > 0 ? 1 : 0;
+   int64_t a = *(const int64_t *)lhs, b = *(const int64_t *)rhs;
+   return (a > b) - (a < b);
 }
 /*--------------------------- Public Functions END ---------------------------*/
 
@@ -161,7 +168,7 @@ static int _cmp_template(const void *lhs, const void *rhs)
    if (a->st != b->st) return a->st < b->st ? -1 : 1;
    if (a->interval != b->interval) return a->interval < b->interval ? -1 : 1;
 
-   return 0;
+   return strcmp(a->path, b->path);
 }
 
 
@@ -175,43 +182,42 @@ static int _join(char *buf, size_t size, const char *dir, const char *name)
 }
 
 
-/**
- * @brief   Read `<lay_cnt>-<st>-<interval>.bptr' into its three numbers
- *
- * The name is accepted only in the spelling `bin/temp_gen' writes: the parse is
- * followed by a format back into the same buffer and a comparison, so a name
- * that merely parses (`01-0-16.bptr', `+1-0-16.bptr') is a stranger, not a
- * second spelling of an image the caller prepared.
- *
- * @param[in]  name      file name of a template
- * @param[out] lay_cnt   number of levels
- * @param[out] st        first key
- * @param[out] interval  distance between two successive keys
- *
- * @return  _NAME_OK, _NAME_BAD or _NAME_LAY_CNT
- */
-static int _parse_name(const char *name, unsigned int *lay_cnt, int64_t *st,
-                       int64_t *interval)
+/* Parse with the shared fixture grammar, then round-trip through its canonical
+ * formatter. This rejects decimal aliases, reordered overrides and alternate
+ * spellings while preserving the exact full-fixture naming convention. */
+static int _parse_name(const char *name, struct template *tmpl)
 {
-   char canon[64];
-   unsigned int lay;
-   long long first, step;
-   int end = 0;
+   char canon[PATH_MAX + 2];
+   const char *base;
+   int needed;
 
-   if (sscanf(name, "%u-%lld-%lld.bptr%n", &lay, &first, &step, &end) != 3 ||
-       name[end] != '\0')
+   if (!temp_parse_name(name, &tmpl->lay_cnt, &tmpl->st, &tmpl->interval,
+                        &tmpl->shape))
+      return strncmp(name, "0-", 2) == 0 ? _NAME_LAY_CNT : _NAME_BAD;
+
+   needed = temp_path(canon, sizeof canon, "", tmpl->lay_cnt, tmpl->st,
+                       tmpl->interval, &tmpl->shape);
+   if (needed < 0 || (size_t)needed >= sizeof canon)
+    {
+      temp_shape_free(&tmpl->shape);
       return _NAME_BAD;
-
-   snprintf(canon, sizeof canon, "%u-%lld-%lld.bptr", lay, first, step);
-   if (strcmp(canon, name) != 0) return _NAME_BAD;
-
-   if (lay == 0) return _NAME_LAY_CNT;
-
-   *lay_cnt = lay;
-   *st = first;
-   *interval = step;
+    }
+   base = strrchr(canon, '/');
+   base = base == NULL ? canon : base + 1;
+   if (strcmp(base, name))
+    {
+      temp_shape_free(&tmpl->shape);
+      return _NAME_BAD;
+    }
 
    return _NAME_OK;
+}
+
+
+static void _free_list(struct template *list, size_t cnt)
+{
+   for (size_t i = 0; i < cnt; i++) temp_shape_free(&list[i].shape);
+   free(list);
 }
 
 
@@ -229,7 +235,7 @@ static void _reason(char *buf, size_t size, const char *fmt, ...)
 
 static void _set_list(struct template *list, size_t cnt)
 {
-   free(templates_list);
+   _free_list(templates_list, templates_cnt);
    templates_list = list;
    templates_cnt = cnt;
 }

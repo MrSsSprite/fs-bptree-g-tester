@@ -4,6 +4,7 @@
 /*----------------------------- Public Includes ------------------------------*/
 #include <stddef.h>
 #include <stdint.h>
+#include "templates.h"
 /*--------------------------- Public Includes END ----------------------------*/
 
 
@@ -68,21 +69,21 @@ int tools_instantiate(const char *src, const char *dst);
  * position it was split at, so its path says nothing about the layout, and the
  * tool is the one that has to know which lattice and how many levels to expect.
  *
- * @param[in] lay_cnt     levels of the template the image was copied from
- * @param[in] st          first key of the lattice
- * @param[in] interval    distance between two successive keys
- * @param[in] has_new_kv  image holds one inserted record; the tool then expects
- *                        `lay_cnt + 1' levels and tolerates that record
+ * @param[in] tmpl        original lattice, canonical name and occupancy shape
+ * @param[in] has_new_kv  image holds one inserted record
  * @param[in] key         key of the inserted record, when there is one
  * @param[in] val         value of the inserted record, when there is one
+ * @param[in] expected    final height and node/leaf totals; required for custom
+ *                        inserted images, NULL for pristine and full images
  * @param[in] path        image to check
  *
  * @return  the status `tools_run' reports: 0 verified, 1 a check failed (the
  *          tool's Unity report is then replayed on stderr), 2 usage, 3 the
  *          image cannot be loaded
  */
-int tools_verify(unsigned int lay_cnt, int64_t st, int64_t interval,
-                 _Bool has_new_kv, int64_t key, int64_t val, const char *path);
+int tools_verify(const struct template *tmpl, _Bool has_new_kv,
+                 int64_t key, int64_t val,
+                 const struct temp_verify_expect *expected, const char *path);
 /**
  * @brief   Name the result of a tool the caller ran
  *

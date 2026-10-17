@@ -5,14 +5,15 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "temp_shape.h"
 /*--------------------------- Public Includes END ----------------------------*/
 
 
 /*------------------------------ Public Defines ------------------------------*/
 /* Directory the unit reads its templates from when no directory is given on the
  * command line, relative to the working directory.  The unit never writes
- * there: preparing a template is the caller's job, and a template is named
- * `<lay_cnt>-<st>-<interval>.bptr' -- the name `bin/temp_gen' gives an image. */
+ * there: preparing a template is the caller's job. Names are canonical full
+ * or custom fixture names written by `bin/temp_gen'. */
 #define TEMPLATES_DEFAULT_DIR "bptr_files/temp/full/"
 
 /* Status of `templates_load_dir'.  `TEMPLATES_OK' is the only success; the
@@ -46,6 +47,7 @@ struct template
    unsigned int lay_cnt;         /* number of levels; 1 yields a single leaf */
    int64_t      st;              /* first key */
    int64_t      interval;        /* distance between two successive keys */
+   struct temp_shape shape;      /* owned original occupancy overrides */
    char         path[PATH_MAX];  /* the image, relative to the cwd */
 };
 /*---------------------------- Public Structs END ----------------------------*/
@@ -55,15 +57,16 @@ struct template
 /**
  * @brief   Load every template @p dir holds
  *
- * Scans the directory for `*.bptr' entries and reads `lay_cnt'-`st'-`interval'
- * off each name; an entry of any other name is ignored, a `.bptr' one that does
- * not follow the convention is an error -- a file that is offered as a template
+ * Scans the directory for `*.bptr' entries and reads the lattice and optional
+ * per-node occupancy overrides from each canonical name. Other entries are
+ * ignored; a `.bptr' name that breaks the convention is an error -- a template
  * must never be dropped silently.  The name has to be spelled exactly as
  * `bin/temp_gen' writes it: a name that would only parse under a different
  * spelling (a leading zero, a `+') is a stranger, not a second name of an image
  * the caller prepared.  The list is sorted by `lay_cnt', then `st', then
- * `interval', because the order of `readdir' is not defined and the run has to
- * be reproducible.  It replaces the list `templates_get' hands out.
+ * `interval', then canonical filename, because the order of `readdir' is not
+ * defined and the run has to be reproducible. It replaces the list
+ * `templates_get' hands out.
  *
  * A directory that cannot be read and one that holds no template are told
  * apart, but both mean "nothing to test": the unit decides how to report that
@@ -85,6 +88,8 @@ int templates_load_dir(const char *dir, char *reason, size_t size);
  * @return  the list, owned by this module and replaced by the next load
  */
 const struct template *templates_get(size_t *cnt);
+/** Release the template list and every owned occupancy override. */
+void templates_cleanup(void);
 /**
  * @brief   Comparator of the key lattice, `int64_t' keys
  *

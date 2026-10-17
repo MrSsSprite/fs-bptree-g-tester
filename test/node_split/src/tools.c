@@ -134,16 +134,50 @@ int tools_instantiate(const char *src, const char *dst)
 }
 
 
-int tools_verify(unsigned int lay_cnt, int64_t st, int64_t interval,
-                 _Bool has_new_kv, int64_t key, int64_t val, const char *path)
+int tools_verify(const struct template *tmpl, _Bool has_new_kv,
+                 int64_t key, int64_t val,
+                 const struct temp_verify_expect *expected, const char *path)
 {
    char lay[16], first[32], step[32], k[32], v[32];
-   char *argv[14];
-   size_t n = 0;
+   char height[16], nodes[32], leaves[32];
+   char *specs = NULL, **argv = NULL;
+   size_t n = 0, count = tmpl->shape.override_count;
+   int status, err = EINVAL;
 
-   snprintf(lay, sizeof lay, "%u", lay_cnt);
-   snprintf(first, sizeof first, "%" PRIi64, st);
-   snprintf(step, sizeof step, "%" PRIi64, interval);
+   /* Copies have instance names, so pass the entire original shape explicitly.
+    * The loader already round-tripped this canonical name through the shared
+    * parser. Only its comma delimiters need decoding here. */
+   if (count != 0)
+    {
+      const char *base = strrchr(tmpl->path, '/');
+      const char *suffix;
+      size_t len;
+      base = base == NULL ? tmpl->path : base + 1;
+      suffix = strstr(base, "--keys-");
+      if (suffix == NULL) goto failed;
+      suffix += 7;
+      len = strlen(suffix);
+      if (len <= 5 || strcmp(suffix + len - 5, ".bptr")) goto failed;
+      specs = malloc(len - 5 + 1);
+      if (specs == NULL) { err = ENOMEM; goto failed; }
+      memcpy(specs, suffix, len - 5);
+      specs[len - 5] = '\0';
+      if (has_new_kv && expected == NULL) goto failed;
+    }
+
+   if (count > (SIZE_MAX / sizeof *argv - 19u) / 2u)
+    {
+      err = ENOMEM;
+      goto failed;
+    }
+   /* Base options, inserted key/value, final totals, path and NULL, plus one
+    * option/value pair per override. Exact arguments are appended below. */
+   argv = calloc(19u + count * 2u, sizeof *argv);
+   if (argv == NULL) { err = ENOMEM; goto failed; }
+
+   snprintf(lay, sizeof lay, "%u", tmpl->lay_cnt);
+   snprintf(first, sizeof first, "%" PRIi64, tmpl->st);
+   snprintf(step, sizeof step, "%" PRIi64, tmpl->interval);
 
    argv[n++] = (char *)TOOLS_TEMP_VERIFY;
    argv[n++] = (char *)"--lay-cnt";
@@ -152,6 +186,20 @@ int tools_verify(unsigned int lay_cnt, int64_t st, int64_t interval,
    argv[n++] = first;
    argv[n++] = (char *)"--interval";
    argv[n++] = step;
+   if (count != 0)
+    {
+      char *spec = specs;
+      for (size_t i = 0; i < count; i++)
+       {
+         char *comma = strchr(spec, ',');
+         if (*spec == '\0' || (i + 1u < count) != (comma != NULL))
+            goto failed;
+         if (comma != NULL) *comma = '\0';
+         argv[n++] = (char *)"--node-keys";
+         argv[n++] = spec;
+         if (comma != NULL) spec = comma + 1;
+       }
+    }
    if (has_new_kv)
     {
       snprintf(k, sizeof k, "%" PRIi64, key);
@@ -160,13 +208,34 @@ int tools_verify(unsigned int lay_cnt, int64_t st, int64_t interval,
       argv[n++] = k;
       argv[n++] = (char *)"--val";
       argv[n++] = v;
+      if (count != 0)
+       {
+         snprintf(height, sizeof height, "%" PRIu32, expected->height);
+         snprintf(nodes, sizeof nodes, "%" PRIu64, expected->nodes);
+         snprintf(leaves, sizeof leaves, "%" PRIu64, expected->leaves);
+         argv[n++] = (char *)"--expect-height";
+         argv[n++] = height;
+         argv[n++] = (char *)"--expect-nodes";
+         argv[n++] = nodes;
+         argv[n++] = (char *)"--expect-leaves";
+         argv[n++] = leaves;
+       }
     }
    argv[n++] = (char *)path;
    argv[n] = NULL;
 
-   return tools_run(argv);
-}
+   status = tools_run(argv);
+   free(argv);
+   free(specs);
+   return status;
 
+failed:
+   free(argv);
+   free(specs);
+   tools_errno = err;
+   errno = err;
+   return TOOLS_E_SPAWN;
+}
 
 void tools_strstatus(char *buf, size_t size, const char *cmd, int status)
 {

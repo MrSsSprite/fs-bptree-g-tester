@@ -23,7 +23,7 @@ void test_temp(void);
  *
  * The unit owns no template: `DIR` -- the one argument, or
  * `TEMPLATES_DEFAULT_DIR` when none is given -- is scanned for
- * `<lay_cnt>-<st>-<interval>.bptr' images, and the cases walk what it holds.
+ * canonical full/custom `.bptr' images, and the cases walk what it holds.
  * Preparing them is the caller's job (`utils/temp`: `bin/temp_gen` writes one,
  * `bin/temp_inst` copies one); this unit only reads, split-tests and verifies
  * them, so it never generates a template of its own.
@@ -83,7 +83,9 @@ int main(int argc, char *argv[])
     * above has to have verified them first */
    RUN_TEST(test_full_split);
 
-   return UNITY_END();
+   status = UNITY_END();
+   templates_cleanup();
+   return status;
 }
 /*--------------------------------- MAIN END ---------------------------------*/
 
@@ -115,8 +117,7 @@ void test_temp(void)
        * replayed on stderr by `tools_run', so this line is what tells which
        * image carried it */
       printf("  template %s\n", tmpl->path);
-      status = tools_verify(tmpl->lay_cnt, tmpl->st, tmpl->interval, 0, 0, 0,
-                            tmpl->path);
+      status = tools_verify(tmpl, 0, 0, 0, NULL, tmpl->path);
       tools_strstatus(err, sizeof err, TOOLS_TEMP_VERIFY, status);
       snprintf(msg, sizeof msg, "failed to verify %s: %s", tmpl->path, err);
       TEST_ASSERT_EQUAL_INT_MESSAGE(0, status, msg);

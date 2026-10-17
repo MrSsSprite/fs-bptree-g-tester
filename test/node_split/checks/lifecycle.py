@@ -2,11 +2,12 @@
 import subprocess
 import sys
 
-for height in (1, 4):
+for height, override in ((1, None), (4, None), (2, "root=4"), (4, "0=4")):
     for scenario in ("success", "verify-failure", "remove-failure", "unload-failure"):
-        result = subprocess.run(
-            [sys.argv[1], scenario, str(height)], capture_output=True
-        )
+        args = [sys.argv[1], scenario, str(height)]
+        if override is not None:
+            args.append(override)
+        result = subprocess.run(args, capture_output=True)
         output = result.stdout.decode()
         assert result.returncode == 0, (scenario, output, result.stderr.decode())
         assert not result.stderr, result.stderr.decode()
@@ -20,4 +21,4 @@ for height in (1, 4):
                 phase = "split"
             assert f"    {phase} bptr_files/temp/split/{height}-2.bptr:" in output
             assert "    split bptr_files/temp/split/" + str(height) + "-*.bptr: PASS" not in output
-        print(f"height {height}: {scenario}: PASS")
+        print(f"height {height}, {override or 'full'}: {scenario}: PASS")

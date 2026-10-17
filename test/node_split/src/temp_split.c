@@ -30,6 +30,13 @@
 /* Released by tearDown even if a Unity assertion aborts the split case. */
 static struct split_sampler samples;
 
+struct split_ancestry
+{
+   bptr_node_t indices[SPLIT_CACHE_CAP];
+   uint32_t keys[SPLIT_CACHE_CAP];
+   unsigned int count;
+};
+
 /*---------------------------- Private Functions -----------------------------*/
 /**
  * @brief   Fetch the leaf an inserted key belongs to
@@ -44,7 +51,8 @@ static struct split_sampler samples;
  *
  * @return  the leaf, still loaded; NULL when a node cannot be fetched
  */
-static struct bptr_node *split_descend(struct bptr *self, int64_t key)
+static struct bptr_node *split_descend(struct bptr *self, int64_t key,
+                                       struct split_ancestry *ancestors)
 {
    struct bptr_node *node = bptr_node_fetch(self, self->root_idx);
 
@@ -53,6 +61,13 @@ static struct bptr_node *split_descend(struct bptr *self, int64_t key)
       struct bptr_node *child;
       uint32_t idx;
 
+      if (ancestors != NULL)
+       {
+         if (ancestors->count == SPLIT_CACHE_CAP)
+          { bptr_node_unload(self, node); return NULL; }
+         ancestors->indices[ancestors->count] = node->node_idx;
+         ancestors->keys[ancestors->count++] = node->key_count;
+       }
       for (idx = 0; idx < node->key_count; idx++)
          if (key < ((int64_t*)node->keys)[idx]) break;
       child = bptr_node_fetch(self, _node_brch_vals_get(self, node, idx));
@@ -83,6 +98,9 @@ void test_full_split(void)
       struct bptr_node *node;
       int64_t st = tmpl->st, interval = tmpl->interval, k, v;
       unsigned int height;
+      uint32_t node_size;
+      uint64_t node_count;
+      _Bool is_lite;
       int sample_rc, unload_rc;
       size_t gap_cnt;
 
@@ -105,28 +123,53 @@ void test_full_split(void)
       lay.brch_up = (unsigned int)bptr->node_bound.brch.up;
       lay.rec_cnt = bptr->record_cnt;
       height = bptr->height;
+      node_size = bptr->node_size;
+      node_count = bptr->node_cnt;
+      is_lite = bptr->is_lite;
       snprintf(msg, sizeof msg, "failed to unload the template %s", tmpl->path);
       unload_rc = bptr_unload(bptr);
       TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, unload_rc, msg);
       TEST_ASSERT_EQUAL_UINT_MESSAGE(lay.lay_cnt, height,
                                      "template height does not match its name");
 
-      sample_rc = split_sampler_init(&samples, &lay);
+      sample_rc = split_sampler_init_shape(&samples, &lay, &tmpl->shape,
+                                           is_lite, node_size);
       snprintf(msg, sizeof msg, "%s: %s", tmpl->path,
                split_sampler_strerror(sample_rc));
       TEST_ASSERT_EQUAL_INT_MESSAGE(SPLIT_SAMPLE_OK, sample_rc, msg);
-      /* All gaps are between these endpoints, and the lattice ascends. Check
-       * both extrema before copying anything, including the doubled values. */
-      sample_rc = split_sampler_kv(st, interval, 0, &k, &v);
+      if (samples.custom)
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(samples.original.nodes, node_count,
+                                         "template node count does not match its shape");
+      gap_cnt = split_sampler_count(&samples);
+      if (samples.nonfull_leaves != 0)
+         printf("  skip %" PRIu64 " non-full leaves in %s\n",
+                samples.nonfull_leaves, tmpl->path);
+      if (gap_cnt == 0)
+       {
+         printf("  skip %s: no full leaves to split\n", tmpl->path);
+         split_sampler_destroy(&samples);
+         continue;
+       }
+      /* Small custom samplers enumerate eligible gaps in order, lazily.
+       * Taller lists are bounded; find their extrema before copying. */
+      uint64_t low_gap = split_sampler_gap_at(&samples, 0);
+      uint64_t high_gap = split_sampler_gap_at(&samples, gap_cnt - 1);
+      if (lay.lay_cnt >= 3)
+         for (size_t i = 0; i < gap_cnt; i++)
+          {
+            uint64_t gap = split_sampler_gap_at(&samples, i);
+            if (gap < low_gap) low_gap = gap;
+            if (gap > high_gap) high_gap = gap;
+          }
+      sample_rc = split_sampler_kv(st, interval, low_gap, &k, &v);
       if (sample_rc == SPLIT_SAMPLE_OK)
-         sample_rc = split_sampler_kv(st, interval, lay.rec_cnt, &k, &v);
+         sample_rc = split_sampler_kv(st, interval, high_gap, &k, &v);
       snprintf(msg, sizeof msg, "%s: %s", tmpl->path,
                split_sampler_strerror(sample_rc));
       TEST_ASSERT_EQUAL_INT_MESSAGE(SPLIT_SAMPLE_OK, sample_rc, msg);
 
-      gap_cnt = split_sampler_count(&samples);
-      printf("  %zu positions: %u keys per leaf, %u children and %u keys per "
-             "node, %" PRIu64 " records\n", gap_cnt, lay.leaf_up - 1,
+      printf("  %zu positions: capacity %u keys per leaf, %u children and %u keys per "
+             "branch, %" PRIu64 " records\n", gap_cnt, lay.leaf_up - 1,
              lay.brch_up, lay.brch_up - 1, lay.rec_cnt);
       /* the instances of this template as one name: the verdict line of each
        * phase below names the set it covered */
@@ -140,8 +183,19 @@ void test_full_split(void)
          int64_t k, v;
          int status, unload_rc, rm_rc;
          bptr_node_t sibling;
+         bptr_node_t original_root;
+         struct split_ancestry ancestors = {0};
+         struct temp_verify_expect expected;
+         unsigned int stop_depth = UINT_MAX;
 
          split_sampler_kv(st, interval, gap, &k, &v);
+         if (samples.custom)
+          {
+            sample_rc = split_sampler_expect(&samples, gap, &expected, &stop_depth);
+            snprintf(msg, sizeof msg, "%s: %s", tmpl->path,
+                     split_sampler_strerror(sample_rc));
+            TEST_ASSERT_EQUAL_INT_MESSAGE(SPLIT_SAMPLE_OK, sample_rc, msg);
+          }
 
          snprintf(inst, sizeof inst, SPLIT_INST_DIR "%u-%zu.bptr",
                   tmpl->lay_cnt, gap_i);
@@ -165,11 +219,15 @@ void test_full_split(void)
          if (bptr == NULL) progress_break();
          TEST_ASSERT_NOT_NULL_MESSAGE(bptr, msg);
 
-         node = split_descend(bptr, k);
+         original_root = bptr->root_idx;
+         node = split_descend(bptr, k, samples.custom ? &ancestors : NULL);
          snprintf(msg, sizeof msg, "failed to fetch the leaf of %s for key %"
                   PRIi64, path, k);
          if (node == NULL) progress_break();
          TEST_ASSERT_NOT_NULL_MESSAGE(node, msg);
+         if (node->key_count != lay.leaf_up - 1) progress_break();
+         TEST_ASSERT_EQUAL_UINT_MESSAGE(lay.leaf_up - 1, node->key_count,
+                                        "selected leaf is not full");
 
          sibling = bptr_node_split(bptr, node, &k, &v);
          snprintf(msg, sizeof msg, "split of key %" PRIi64 " at %s failed: "
@@ -186,6 +244,44 @@ void test_full_split(void)
          TEST_ASSERT_EQUAL_UINT64_MESSAGE(node->next, sibling, msg);
          bptr_node_unload(bptr, node);
 
+         if (samples.custom)
+          {
+            if (bptr->height != expected.height || bptr->node_cnt != expected.nodes ||
+                bptr->record_cnt != samples.original.records + 1) progress_break();
+            TEST_ASSERT_EQUAL_UINT_MESSAGE(expected.height, bptr->height,
+                                           "split propagated to the wrong height");
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(expected.nodes, bptr->node_cnt,
+                                             "split created the wrong number of nodes");
+            TEST_ASSERT_EQUAL_UINT64_MESSAGE(samples.original.records + 1,
+                                             bptr->record_cnt, "split record count");
+            if (stop_depth != UINT_MAX)
+             {
+               if (bptr->root_idx != original_root) progress_break();
+               TEST_ASSERT_EQUAL_UINT64_MESSAGE(original_root, bptr->root_idx,
+                                                "absorbed split replaced the root");
+               TEST_ASSERT_LESS_THAN_UINT_MESSAGE(ancestors.count, stop_depth,
+                                                  "missing stopping ancestor");
+               for (unsigned int depth = 0; depth <= stop_depth; depth++)
+                {
+                  node = bptr_node_fetch(bptr, ancestors.indices[depth]);
+                  if (node == NULL) progress_break();
+                  TEST_ASSERT_NOT_NULL_MESSAGE(node, "failed to fetch original ancestor");
+                  uint32_t count = node->key_count;
+                  bptr_node_unload(bptr, node);
+                  uint32_t wanted = ancestors.keys[depth] + (depth == stop_depth);
+                  if (count != wanted) progress_break();
+                  TEST_ASSERT_EQUAL_UINT_MESSAGE(wanted, count,
+                                                 "unexpected ancestor occupancy after split");
+                }
+             }
+            else
+             {
+               if (bptr->root_idx == original_root) progress_break();
+               TEST_ASSERT_NOT_EQUAL_MESSAGE(original_root, bptr->root_idx,
+                                              "full cascade did not replace the root");
+             }
+          }
+
          /* Flush and close before another process reads the image. Keep only
           * this instance until it has been verified and successfully removed. */
          snprintf(msg, sizeof msg, "failed to unload the instance %s", path);
@@ -195,7 +291,8 @@ void test_full_split(void)
 
          progress_update("    verify %s: key %" PRIi64
                          " (position %zu/%zu)", path, k, gap_i + 1, gap_cnt);
-         status = tools_verify(tmpl->lay_cnt, st, interval, 1, k, v, path);
+         status = tools_verify(tmpl, 1, k, v,
+                                samples.custom ? &expected : NULL, path);
          if (status != 0) progress_break();
          tools_strstatus(err, sizeof err, TOOLS_TEMP_VERIFY, status);
          snprintf(msg, sizeof msg, "failed to verify the instance %s: %s",
