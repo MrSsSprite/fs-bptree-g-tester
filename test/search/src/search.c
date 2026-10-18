@@ -25,6 +25,7 @@ static void _remove(void);
 void search_require(_Bool ok, const char *fmt, ...)
 {
    char message[PATH_MAX + 512];
+   char context[PATH_MAX * 2 + 512];
    va_list args;
 
    if (ok) return;
@@ -32,6 +33,13 @@ void search_require(_Bool ok, const char *fmt, ...)
    vsnprintf(message, sizeof message, fmt, args);
    va_end(args);
    progress_break();
+   if (search_state.tmpl != NULL &&
+       strstr(message, search_state.tmpl->path) == NULL)
+    {
+      snprintf(context, sizeof context, "%s: %s", search_state.tmpl->path,
+                message);
+      TEST_FAIL_MESSAGE(context);
+    }
    TEST_FAIL_MESSAGE(message);
 }
 

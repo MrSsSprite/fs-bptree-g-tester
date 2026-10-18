@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "search.h"
+#include "cache_checks.h"
 #include "unity.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,11 +43,15 @@ int main(int argc, char *argv[])
 
    templates = templates_get(&count);
    UNITY_BEGIN();
+   RUN_TEST(test_search_empty);
    for (size_t i = 0; i < count; i++)
     {
       search_template = &templates[i];
       RUN_TEST(test_search_hits);
       RUN_TEST(test_search_misses);
+      RUN_TEST(test_search_ownership);
+      RUN_TEST(test_search_cache_failures);
+      RUN_TEST(test_search_io_failures);
     }
    status = UNITY_END();
    templates_cleanup();
