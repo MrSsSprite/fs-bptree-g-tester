@@ -293,6 +293,7 @@ static void _path_prepare(void)
 {
    struct search_state *s = &search_state;
    const char *dirs[] = {"bptr_files", "bptr_files/temp", "bptr_files/temp/search"};
+   char directory[] = "bptr_files/temp/search/run-XXXXXX";
    int needed;
 
    search_require(s->dir[0] == '\0', "previous search fixture is still active");
@@ -302,9 +303,10 @@ static void _path_prepare(void)
       search_require(status == 0 || errno == EEXIST, "cannot create %s: %s",
                      dirs[i], strerror(errno));
     }
-   snprintf(s->dir, sizeof s->dir, "bptr_files/temp/search/run-XXXXXX");
-   search_require(mkdtemp(s->dir) != NULL, "cannot create search directory: %s",
+   search_require(mkdtemp(directory) != NULL, "cannot create search directory: %s",
                   strerror(errno));
+   /* Teardown may remove only a directory this process actually created. */
+   snprintf(s->dir, sizeof s->dir, "%s", directory);
    needed = snprintf(s->path, sizeof s->path, "%s/instance.bptr", s->dir);
    search_require(needed >= 0 && (size_t)needed < sizeof s->path,
                   "search instance path is too long");

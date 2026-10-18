@@ -10,8 +10,12 @@ SRCS := main.c search.c cache_checks.c templates.c tools.c progress.c
 OBJS := $(addprefix $(OBJ_DIR)/$(TARGET_NAME)/src/,$(SRCS:.c=.o)) \
         $(SHAPE_OBJ) $(PREREQ_OBJS)
 
-.PHONY: all clean
+.PHONY: all check clean
 all: $(TARGET)
+
+check: all
+	$(MAKE) -C $(ROOT_DIR)/utils/temp
+	python3 checks/integration.py
 
 $(TARGET): $(OBJS)
 	@mkdir -p $(@D)

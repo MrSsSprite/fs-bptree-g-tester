@@ -65,9 +65,10 @@ int tools_instantiate(const char *src, const char *dst);
 /**
  * @brief   Check one image with `bin/temp_verify'
  *
- * The shape of the image is passed explicitly: an instance is named after the
- * position it was split at, so its path says nothing about the layout, and the
- * tool is the one that has to know which lattice and how many levels to expect.
+ * The shape of the image is passed explicitly: a private instance name says
+ * nothing about its layout, and the tool has to know which lattice and how
+ * many levels to expect. Search uses the pristine-image mode of this wrapper,
+ * which is copied from node_split along with the quiet runner.
  *
  * @param[in] tmpl        original lattice, canonical name and occupancy shape
  * @param[in] has_new_kv  image holds one inserted record

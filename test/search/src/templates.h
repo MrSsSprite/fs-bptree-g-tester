@@ -37,10 +37,9 @@
  * `TEMPLATES_DEFAULT_DIR'), and the cases only ever walk that list through
  * `templates_get'.
  *
- * An instance image does not have to follow the name convention -- the split
- * case names its copies after the position they are split at -- which is why
- * the shape is handed to the tools explicitly instead of being re-read from the
- * path: the path of a copy says nothing about the lattice.
+ * An instance image lives in a private run directory with a generic name.
+ * Its original shape is handed to the tools explicitly instead of being
+ * re-read from that name: the path of a copy says nothing about the lattice.
  */
 struct template
 {
