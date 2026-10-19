@@ -109,6 +109,16 @@ static void collision_assert_hit(bptr_node_t idx, struct bptr_node *expected)
    collision_assert_data(node, idx);
    bptr_node_unload(collision_tree, node);
 }
+
+
+static void collision_assert_miss(bptr_node_t idx)
+{
+   bptr_errno = BPTR_E_SUCCESS;
+   TEST_ASSERT_NULL_MESSAGE(bptr_node_fetch(collision_tree, idx),
+                             "disk-only node unexpectedly hit the pinned cache");
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_CACHE_FULL, bptr_errno,
+                                 "pinned cluster should prevent a disk load");
+}
 /*-------------------------- Private Functions END ---------------------------*/
 
 
@@ -161,5 +171,76 @@ void test_cache_hash_collisions(void)
          bptr_node_unload(collision_tree, nodes[i]);
       cache_collisions_cleanup();
     }
+}
+
+
+void test_cache_hash_collision_deletion(void)
+{
+   /* Three pool slots give four hash buckets. IDs 3, 8 and 11 share bucket 3,
+    * making a cluster across buckets 3, 0 and 1. ID 16 also hashes to 3. */
+   const bptr_node_t indices[] = { 3, 8, 11 };
+   const char *roles[] = { "head", "middle", "tail" };
+   struct bptr_node *nodes[3], *replacement;
+
+   for (unsigned int lite = 0; lite < 2; lite++)
+      for (size_t victim = 0; victim < 3; victim++)
+       {
+         printf("\tWrapped collisions (%s, %s deletion)...\n",
+                lite ? "lite" : "normal", roles[victim]);
+         collision_prepare("cache_hash_deletion.bptr", (_Bool)lite, 16, 3);
+         for (size_t i = 0; i < 3; i++)
+          {
+            nodes[i] = bptr_node_fetch(collision_tree, indices[i]);
+            TEST_ASSERT_NOT_NULL_MESSAGE(nodes[i], "cannot load wrapped cluster");
+            collision_mark(nodes[i]);
+          }
+         for (size_t i = 0; i < 3; i++)
+            collision_assert_hit(indices[i], nodes[i]);
+
+         /* A valid disk-only collider must miss without disturbing residents. */
+         collision_assert_miss(16);
+
+         /* Only this entry is evictable, independently of FIFO policy. */
+         bptr_node_unload(collision_tree, nodes[victim]);
+         replacement = bptr_node_fetch(collision_tree, 1);
+         TEST_ASSERT_NOT_NULL_MESSAGE(replacement, "cannot evict cluster victim");
+         TEST_ASSERT_EQUAL_PTR_MESSAGE(nodes[victim], replacement,
+                                       "replacement did not reuse the victim slot");
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(1, replacement->node_idx,
+                                          "replacement has the wrong node ID");
+         collision_mark(replacement);
+         collision_assert_hit(1, replacement);
+         for (size_t i = 0; i < 3; i++)
+            if (i != victim)
+               collision_assert_hit(indices[i], nodes[i]);
+         collision_assert_miss(indices[victim]);
+
+         /* ID 2 starts at bucket 0. Replacing 1 again exposes incorrect probe
+          * distances left by backward shifts, including the zero-distance stop. */
+         bptr_node_unload(collision_tree, replacement);
+         replacement = bptr_node_fetch(collision_tree, 2);
+         TEST_ASSERT_NOT_NULL_MESSAGE(replacement, "cannot replace eviction slot");
+         TEST_ASSERT_EQUAL_PTR_MESSAGE(nodes[victim], replacement,
+                                       "second replacement changed pool slots");
+         TEST_ASSERT_EQUAL_UINT64_MESSAGE(2, replacement->node_idx,
+                                          "second replacement has wrong node ID");
+         collision_mark(replacement);
+         collision_assert_hit(2, replacement);
+         for (size_t i = 0; i < 3; i++)
+            if (i != victim)
+               collision_assert_hit(indices[i], nodes[i]);
+
+         /* Re-fetch the deleted ID: a stale hash entry must not return node 2. */
+         bptr_node_unload(collision_tree, replacement);
+         nodes[victim] = bptr_node_fetch(collision_tree, indices[victim]);
+         TEST_ASSERT_NOT_NULL_MESSAGE(nodes[victim], "cannot reload cluster victim");
+         collision_assert_data(nodes[victim], indices[victim]);
+         for (size_t i = 0; i < 3; i++)
+            collision_assert_hit(indices[i], nodes[i]);
+
+         for (size_t i = 0; i < 3; i++)
+            bptr_node_unload(collision_tree, nodes[i]);
+         cache_collisions_cleanup();
+       }
 }
 /*--------------------------- Public Functions END ---------------------------*/

@@ -21,6 +21,7 @@ int main(void)
    RUN_TEST(test_cache_data_persistence);
    RUN_TEST(test_cache_capacity_boundaries);
    RUN_TEST(test_cache_hash_collisions);
+   RUN_TEST(test_cache_hash_collision_deletion);
 
    return UNITY_END();
 }

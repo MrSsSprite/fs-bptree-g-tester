@@ -11,7 +11,15 @@ and payload changes stay unflushed, so a failed lookup cannot pass by loading
 a duplicate from disk. Update these deliberately chosen IDs if the hash or
 table-sizing policy changes.
 
+`test_cache_hash_collision_deletion` uses IDs 3, 8 and 11 in a three-slot
+cache: all hash to bucket 3 of four, so probing wraps through buckets 0 and
+1. A valid disk-only collider (ID 16) must miss while every slot is pinned.
+Separate scenarios evict the cluster's head, middle and tail, check that the
+surviving nodes still hit, replace the reused slot again to expose incorrect
+probe distances, then reload the victim to catch stale mappings. Each scenario
+runs in both layouts and makes only the chosen victim evictable.
+
 Build with `make clean && make cache`, then run `./bin/cache` from the worktree
-root. The five Unity cases create and remove fixtures under `bptr_files/`;
+root. The six Unity cases create and remove fixtures under `bptr_files/`;
 use a fresh working directory when old fixtures may be present. Collision
 fixtures are also cleaned by Unity teardown if an assertion aborts a case.
