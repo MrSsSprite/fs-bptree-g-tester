@@ -6,7 +6,7 @@ SHAPE_SRC := ../../utils/temp/src/temp_shape.c
 SHAPE_OBJ := $(OBJ_DIR)/$(TARGET_NAME)/common/temp_shape.o
 CPPFLAGS += -I$(ROOT_DIR)/utils/temp/src
 
-SRCS := main.c search.c cache_checks.c templates.c tools.c progress.c
+SRCS := main.c search.c cache_checks.c templates.c tools.c
 OBJS := $(addprefix $(OBJ_DIR)/$(TARGET_NAME)/src/,$(SRCS:.c=.o)) \
         $(SHAPE_OBJ) $(PREREQ_OBJS)
 
@@ -25,7 +25,7 @@ $(SHAPE_OBJ): $(SHAPE_SRC) ../../utils/temp/src/temp_shape.h ../../utils/temp/sr
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/$(TARGET_NAME)/src/%.o: src/%.c $(wildcard src/*.h) ../../utils/temp/src/temp_shape.h
+$(OBJ_DIR)/$(TARGET_NAME)/src/%.o: src/%.c $(wildcard src/*.h) $(TEST_DIR)/progress.h ../../utils/temp/src/temp_shape.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 

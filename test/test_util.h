@@ -4,6 +4,7 @@
 /*----------------------------- Public Includes ------------------------------*/
 #include "test_bptr_setup.h"
 #include "test_bptr_temp.h"
+#include "progress.h"
 /*--------------------------- Public Includes END ----------------------------*/
 
 #endif

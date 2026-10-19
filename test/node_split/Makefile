@@ -6,9 +6,10 @@ TARGET      := $(BIN_DIR)/$(TARGET_NAME)
 TU_SRC_DIR := src
 SHAPE_SRC := ../../utils/temp/src/temp_shape.c
 SHAPE_OBJ := $(OBJ_DIR)/$(TARGET_NAME)/common/temp_shape.o
+PROGRESS_OBJ := $(OBJ_DIR)/test_util/progress.o
 CPPFLAGS += -I$(ROOT_DIR)/utils/temp/src
 
-SRCS += main.c templates.c temp_split.c split_sampler.c tools.c progress.c
+SRCS += main.c templates.c temp_split.c split_sampler.c tools.c
 SRCS_PATH = $(addprefix $(TU_SRC_DIR)/, $(SRCS))
 OBJS := $(SRCS_PATH:%.c=$(OBJ_DIR)/$(TARGET_NAME)/%.o) $(SHAPE_OBJ) $(PREREQ_OBJS)
 
@@ -19,12 +20,12 @@ LIFECYCLE_TEST := $(BIN_DIR)/node_split_lifecycle
 LIFECYCLE_TEST_OBJS := $(OBJ_DIR)/$(TARGET_NAME)/checks/lifecycle.o \
                        $(OBJ_DIR)/$(TARGET_NAME)/src/temp_split.o \
                        $(OBJ_DIR)/$(TARGET_NAME)/src/split_sampler.o \
-                       $(OBJ_DIR)/$(TARGET_NAME)/src/progress.o $(SHAPE_OBJ) $(UNITY_OBJ)
+                       $(PROGRESS_OBJ) $(SHAPE_OBJ) $(UNITY_OBJ)
 TEMPLATES_TEST := $(BIN_DIR)/node_split_templates
 TEMPLATES_TEST_OBJS := $(OBJ_DIR)/$(TARGET_NAME)/checks/templates.o \
                        $(OBJ_DIR)/$(TARGET_NAME)/src/templates.o \
                        $(OBJ_DIR)/$(TARGET_NAME)/src/tools.o \
-                       $(OBJ_DIR)/$(TARGET_NAME)/src/progress.o $(SHAPE_OBJ) $(UNITY_OBJ)
+                       $(PROGRESS_OBJ) $(SHAPE_OBJ) $(UNITY_OBJ)
 
 .PHONY: all check clean
 
@@ -55,7 +56,7 @@ $(SHAPE_OBJ): $(SHAPE_SRC) ../../utils/temp/src/temp_shape.h ../../utils/temp/sr
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/$(TARGET_NAME)/%.o: %.c src/templates.h src/tools.h src/split_sampler.h ../../utils/temp/src/temp_shape.h
+$(OBJ_DIR)/$(TARGET_NAME)/%.o: %.c src/templates.h src/tools.h src/split_sampler.h $(TEST_DIR)/progress.h ../../utils/temp/src/temp_shape.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 

@@ -5,7 +5,7 @@
 #include "../src/split_sampler.h"
 #include "../src/templates.h"
 #include "../src/tools.h"
-#include "../src/progress.h"
+#include "progress.h"
 #include "bptr_internal.h"
 #include "bptr_node.h"
 #include "unity.h"

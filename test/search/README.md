@@ -81,6 +81,11 @@ other cases. Terminal progress updates occur per leaf or phase. Successful tool
 output is quiet; failed tool output is replayed. A mismatched result names the
 template and query, then gives expected and actual leaf/index/found status.
 
+The live printer is shared with other test units in `test/progress.{c,h}`.
+Include `progress.h` directly or through `test_util.h` to use `progress_update`,
+`progress_done` and `progress_break`; the common build rules compile and link it
+automatically.
+
 ## Isolated integration driver
 
 `make -C test/search check` runs

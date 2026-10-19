@@ -40,6 +40,7 @@ $(OBJ_DIR)/core/%.o: $(SRC_DIR)/%.c
 
 TEST_UTIL_SRCS := $(wildcard $(TEST_DIR)/*.c)
 TEST_UTIL_OBJS := $(patsubst $(TEST_DIR)/%.c, $(OBJ_DIR)/test_util/%.o, $(TEST_UTIL_SRCS))
+$(OBJ_DIR)/test_util/progress.o: $(TEST_DIR)/progress.h
 $(OBJ_DIR)/test_util/%.o: $(TEST_DIR)/%.c
 	@echo "Compiling test utility function: $<"
 	@mkdir -p $(@D)
