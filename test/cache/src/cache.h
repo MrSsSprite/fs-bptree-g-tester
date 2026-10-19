@@ -9,8 +9,8 @@ void test_cache_fetch_persistence(void);
 void test_cache_capacity_boundaries(void);
 void test_cache_hash_collisions(void);
 void test_cache_hash_collision_deletion(void);
-void cache_collisions_cleanup(void);
-void cache_persistence_cleanup(void);
+int cache_collisions_cleanup(void);
+int cache_persistence_cleanup(void);
 /*--------------------- Public Function Declarations END ---------------------*/
 
 #endif

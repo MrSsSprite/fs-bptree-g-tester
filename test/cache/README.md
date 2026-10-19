@@ -34,6 +34,13 @@ probe distances, then reload the victim to catch stale mappings. Each scenario
 runs in both layouts and makes only the chosen victim evictable.
 
 Build with `make clean && make cache`, then run `./bin/cache` from the worktree
-root. The seven Unity cases create and remove fixtures under `bptr_files/`;
-use a fresh working directory when old fixtures may be present. Collision and
-persistence fixtures are also cleaned by Unity teardown if an assertion aborts.
+root. Each run creates a private directory under `bptr_files/` and keeps every
+fixture inside it, so concurrent cache runs and caller-prepared images do not
+interfere. Unity teardown unloads and removes owned fixtures even when an
+assertion aborts a case. All seven cases remove their private directory on exit;
+cleanup errors make the run fail.
+
+`make -C test/cache check` checks repeat and concurrent runs with existing
+caller fixtures. Disposable assertion mutants fail after acquiring each kind
+of fixture and verify that teardown closes its file descriptor and removes
+owned files, including an unexpected non-NULL result for an invalid capacity.

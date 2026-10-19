@@ -47,11 +47,11 @@ static struct bptr_node *persistence_new_leaf(void)
 static void persistence_prepare(_Bool is_lite, bptr_node_t node_count)
 {
    _bptr_path(persistence_path, sizeof persistence_path, "cache_data_persist.bptr");
+   persistence_owned = 1;
    persistence_tree = bptr_init(persistence_path, is_lite, BPTR_NODE_BYTE_DEFAULT,
                                 sizeof(uint32_t), sizeof(uint32_t),
                                 2, persistence_compare);
    TEST_ASSERT_NOT_NULL_MESSAGE(persistence_tree, "cannot create persistence fixture");
-   persistence_owned = 1;
 
    for (bptr_node_t idx = 1; idx <= node_count; idx++)
     {
@@ -137,9 +137,9 @@ static void persistence_verify_reload(struct bptr_node *victim_slot,
 
 
 /*----------------------------- Public Functions -----------------------------*/
-void cache_persistence_cleanup(void)
+int cache_persistence_cleanup(void)
 {
-   int unload_status = BPTR_E_SUCCESS;
+   int unload_status = BPTR_E_SUCCESS, remove_status = 0;
 
    if (persistence_tree != NULL)
     {
@@ -148,13 +148,10 @@ void cache_persistence_cleanup(void)
     }
    if (persistence_owned)
     {
-      int remove_status = remove(persistence_path);
+      remove_status = remove(persistence_path);
       persistence_owned = 0;
-      TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove_status,
-                                    "cannot remove persistence fixture");
     }
-   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, unload_status,
-                                 "cannot unload persistence fixture");
+   return unload_status != BPTR_E_SUCCESS || remove_status != 0;
 }
 
 
@@ -170,7 +167,8 @@ void test_cache_data_persistence(void)
       replacement = persistence_new_leaf();
       persistence_verify_reload(victim, replacement);
       bptr_node_unload(persistence_tree, pinned);
-      cache_persistence_cleanup();
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, cache_persistence_cleanup(),
+                                    "cannot clean persistence fixture");
     }
 }
 
@@ -187,7 +185,8 @@ void test_cache_fetch_persistence(void)
       replacement = bptr_node_fetch(persistence_tree, 3);
       persistence_verify_reload(victim, replacement);
       bptr_node_unload(persistence_tree, pinned);
-      cache_persistence_cleanup();
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, cache_persistence_cleanup(),
+                                    "cannot clean persistence fixture");
     }
 }
 /*--------------------------- Public Functions END ---------------------------*/

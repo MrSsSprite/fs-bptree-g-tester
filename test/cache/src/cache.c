@@ -1,5 +1,6 @@
 /*----------------------------- Private Includes -----------------------------*/
 #include "cache.h"
+#include "fixtures.h"
 #include "unity.h"
 #include "bptree.h"
 #include "bptr_internal.h"
@@ -16,7 +17,6 @@
 
 /*---------------------- Private Function Declarations -----------------------*/
 static int cmp_u32_local(const void *lhs, const void *rhs);
-static void bptr_cleanup_file(const char *fnm);
 /*-------------------- Private Function Declarations END ---------------------*/
 
 
@@ -40,12 +40,12 @@ void test_cache_init(void)
       for (size_t i = 0; i < temp_matrix_sz[ti]; i++)
        {
          printf("\t\tStarting Test: %s...", temp_it[i].fnm);
-         bptr = _bptr_create(temp_it + i);
+         bptr = cache_fixture_create(temp_it + i);
          TEST_ASSERT_NOT_NULL_MESSAGE(bptr->cache,
                                       "cache not allocated");
-         TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+         TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, cache_fixture_unload(),
                                        "bptr_unload failure");
-         bptr_cleanup_file(temp_it[i].fnm);
+         cache_fixture_discard();
          puts("Succeeded.");
        }
     }
@@ -65,7 +65,7 @@ void test_cache_node_lifecycle(void)
 
    // Create tree with small cache (4 slots)
    printf("\t\tCreating tree...");
-   bptr = _bptr_create(&template);
+   bptr = cache_fixture_create(&template);
    TEST_ASSERT_NOT_NULL(bptr->cache);
    puts("done.");
 
@@ -107,9 +107,9 @@ void test_cache_node_lifecycle(void)
    puts("done.");
 
    // Cleanup
-   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, cache_fixture_unload(),
                                  "bptr_unload failure");
-   bptr_cleanup_file(template.fnm);
+   cache_fixture_discard();
    puts("\tNode Lifecycle Test: Succeeded.");
 }
 
@@ -118,7 +118,9 @@ void test_cache_capacity_boundaries(void)
 {
    struct bptr *bptr;
    struct bptr_node *node1, *node2, *node3;
-   char path[256];
+   struct bptr_temp invalid =
+    { "cache_bound_0.bptr", 1, BPTR_NODE_BYTE_DEFAULT,
+      sizeof(uint32_t), sizeof(uint32_t), 0, cmp_u32_local };
 
    puts("\tCache Capacity Boundaries:");
 
@@ -126,24 +128,22 @@ void test_cache_capacity_boundaries(void)
    puts("\t\tInvalid capacity tests:");
 
    printf("\t\t  capacity=0...");
-   _bptr_path(path, sizeof(path), "cache_bound_0.bptr");
-   bptr = bptr_init(path, 1, BPTR_NODE_BYTE_DEFAULT,
-                    sizeof(uint32_t), sizeof(uint32_t),
-                    0, cmp_u32_local);
+   bptr = cache_fixture_try_create(&invalid);
    TEST_ASSERT_NULL_MESSAGE(bptr,
                             "bptr_init(cache_cap=0) should return NULL");
    TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_FN_INPUT, bptr_errno,
                                  "bptr_errno should be BPTR_E_FN_INPUT for cap=0");
+   cache_fixture_discard();
    puts("passed.");
 
    printf("\t\t  capacity=1...");
-   bptr = bptr_init(path, 1, BPTR_NODE_BYTE_DEFAULT,
-                    sizeof(uint32_t), sizeof(uint32_t),
-                    1, cmp_u32_local);
+   invalid.cache_cap = 1;
+   bptr = cache_fixture_try_create(&invalid);
    TEST_ASSERT_NULL_MESSAGE(bptr,
                             "bptr_init(cache_cap=1) should return NULL (< MIN)");
    TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_FN_INPUT, bptr_errno,
                                  "bptr_errno should be BPTR_E_FN_INPUT for cap=1");
+   cache_fixture_discard();
    puts("passed.");
 
    // --- Test cache-full condition ---
@@ -154,7 +154,7 @@ void test_cache_capacity_boundaries(void)
          sizeof(uint32_t), sizeof(uint32_t), 2, cmp_u32_local };
 
       printf("\t\t  Creating tree with cache_cap=2...");
-      bptr = _bptr_create(&template);
+      bptr = cache_fixture_create(&template);
       TEST_ASSERT_NOT_NULL(bptr->cache);
       puts("done.");
 
@@ -182,9 +182,9 @@ void test_cache_capacity_boundaries(void)
       printf("\t\t  Cleaning up...");
       bptr_node_unload(bptr, node1);
       bptr_node_unload(bptr, node2);
-      TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, bptr_unload(bptr),
+      TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, cache_fixture_unload(),
                                     "bptr_unload failure");
-      bptr_cleanup_file(template.fnm);
+      cache_fixture_discard();
       puts("done.");
    }
 
@@ -202,15 +202,4 @@ static int cmp_u32_local(const void *lhs, const void *rhs)
 }
 
 
-static void bptr_cleanup_file(const char *fnm)
-{
-   char path[256];
-   _bptr_path(path, sizeof(path), fnm);
-   if (remove(path) != 0)
-   {
-      // File may not exist if init failed — that's fine
-      if (errno != ENOENT)
-         TEST_FAIL_MESSAGE("failed to remove test file");
-   }
-}
 /*-------------------------- Private Functions END ---------------------------*/

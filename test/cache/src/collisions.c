@@ -32,11 +32,11 @@ static void collision_prepare(const char *filename, _Bool is_lite,
                               bptr_node_t node_count, uint64_t capacity)
 {
    _bptr_path(collision_path, sizeof collision_path, filename);
+   collision_owned = 1;
    collision_tree = bptr_init(collision_path, is_lite, BPTR_NODE_BYTE_DEFAULT,
                               sizeof(uint32_t), sizeof(uint32_t),
                               32, collision_compare);
    TEST_ASSERT_NOT_NULL_MESSAGE(collision_tree, "cannot create collision fixture");
-   collision_owned = 1;
 
    for (bptr_node_t idx = 1; idx <= node_count; idx++)
     {
@@ -123,9 +123,9 @@ static void collision_assert_miss(bptr_node_t idx)
 
 
 /*----------------------------- Public Functions -----------------------------*/
-void cache_collisions_cleanup(void)
+int cache_collisions_cleanup(void)
 {
-   int unload_status = BPTR_E_SUCCESS;
+   int unload_status = BPTR_E_SUCCESS, remove_status = 0;
 
    if (collision_tree != NULL)
     {
@@ -134,13 +134,10 @@ void cache_collisions_cleanup(void)
     }
    if (collision_owned)
     {
-      int remove_status = remove(collision_path);
+      remove_status = remove(collision_path);
       collision_owned = 0;
-      TEST_ASSERT_EQUAL_INT_MESSAGE(0, remove_status,
-                                    "cannot remove collision fixture");
     }
-   TEST_ASSERT_EQUAL_INT_MESSAGE(BPTR_E_SUCCESS, unload_status,
-                                 "cannot unload collision fixture");
+   return unload_status != BPTR_E_SUCCESS || remove_status != 0;
 }
 
 
@@ -169,7 +166,8 @@ void test_cache_hash_collisions(void)
 
       for (size_t i = 0; i < 4; i++)
          bptr_node_unload(collision_tree, nodes[i]);
-      cache_collisions_cleanup();
+      TEST_ASSERT_EQUAL_INT_MESSAGE(0, cache_collisions_cleanup(),
+                                    "cannot clean collision fixture");
     }
 }
 
@@ -240,7 +238,8 @@ void test_cache_hash_collision_deletion(void)
 
          for (size_t i = 0; i < 3; i++)
             bptr_node_unload(collision_tree, nodes[i]);
-         cache_collisions_cleanup();
+         TEST_ASSERT_EQUAL_INT_MESSAGE(0, cache_collisions_cleanup(),
+                                       "cannot clean collision fixture");
        }
 }
 /*--------------------------- Public Functions END ---------------------------*/
