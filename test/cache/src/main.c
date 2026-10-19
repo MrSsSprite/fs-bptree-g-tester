@@ -23,6 +23,7 @@ int main(void)
    RUN_TEST(test_cache_init);
    RUN_TEST(test_cache_node_lifecycle);
    RUN_TEST(test_cache_data_persistence);
+   RUN_TEST(test_cache_fetch_persistence);
    RUN_TEST(test_cache_capacity_boundaries);
    RUN_TEST(test_cache_hash_collisions);
    RUN_TEST(test_cache_hash_collision_deletion);

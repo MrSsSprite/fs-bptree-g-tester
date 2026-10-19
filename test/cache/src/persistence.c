@@ -173,4 +173,21 @@ void test_cache_data_persistence(void)
       cache_persistence_cleanup();
     }
 }
+
+
+void test_cache_fetch_persistence(void)
+{
+   for (unsigned int lite = 0; lite < 2; lite++)
+    {
+      struct bptr_node *pinned, *victim, *replacement;
+
+      printf("\tDirty eviction through fetch (%s)...\n", lite ? "lite" : "normal");
+      persistence_prepare((_Bool)lite, 3);
+      victim = persistence_dirty_victim(&pinned);
+      replacement = bptr_node_fetch(persistence_tree, 3);
+      persistence_verify_reload(victim, replacement);
+      bptr_node_unload(persistence_tree, pinned);
+      cache_persistence_cleanup();
+    }
+}
 /*--------------------------- Public Functions END ---------------------------*/

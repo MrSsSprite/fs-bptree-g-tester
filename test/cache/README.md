@@ -10,6 +10,12 @@ reuses the victim's slot, then reloads the victim from disk and checks both
 records and its clean flag before tree shutdown can flush cached contents.
 Both lite and normal layouts run this scenario.
 
+`test_cache_fetch_persistence` repeats the same dirty-record checks with a
+third leaf already on disk. Fetching that uncached leaf forces eviction
+through the fetch path, independently of the allocation path above. It also
+checks both layouts, confirms slot reuse and clears the reused payload buffer
+before reloading, so leftover memory cannot satisfy persistence assertions.
+
 `test_cache_hash_collisions` uses node IDs 1, 6, 9 and 17 in a four-slot
 cache. With the current Fibonacci hash and eight hash buckets, IDs 1, 9 and
 17 share bucket 4, while ID 6 starts in bucket 5 and is displaced twice by
@@ -28,6 +34,6 @@ probe distances, then reload the victim to catch stale mappings. Each scenario
 runs in both layouts and makes only the chosen victim evictable.
 
 Build with `make clean && make cache`, then run `./bin/cache` from the worktree
-root. The six Unity cases create and remove fixtures under `bptr_files/`;
+root. The seven Unity cases create and remove fixtures under `bptr_files/`;
 use a fresh working directory when old fixtures may be present. Collision and
 persistence fixtures are also cleaned by Unity teardown if an assertion aborts.
