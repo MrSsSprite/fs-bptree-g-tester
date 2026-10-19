@@ -6,7 +6,11 @@
 
 /*------------------------------- Unity Setup --------------------------------*/
 void setUp(void) { }
-void tearDown(void) { cache_collisions_cleanup(); }
+void tearDown(void)
+{
+   cache_collisions_cleanup();
+   cache_persistence_cleanup();
+}
 /*----------------------------- Unity Setup END ------------------------------*/
 
 
