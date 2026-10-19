@@ -128,6 +128,7 @@ void test_cache_capacity_boundaries(void)
    puts("\t\tInvalid capacity tests:");
 
    printf("\t\t  capacity=0...");
+   bptr_errno = BPTR_E_SUCCESS;
    bptr = cache_fixture_try_create(&invalid);
    TEST_ASSERT_NULL_MESSAGE(bptr,
                             "bptr_init(cache_cap=0) should return NULL");
@@ -138,6 +139,7 @@ void test_cache_capacity_boundaries(void)
 
    printf("\t\t  capacity=1...");
    invalid.cache_cap = 1;
+   bptr_errno = BPTR_E_SUCCESS;
    bptr = cache_fixture_try_create(&invalid);
    TEST_ASSERT_NULL_MESSAGE(bptr,
                             "bptr_init(cache_cap=1) should return NULL (< MIN)");
@@ -171,6 +173,7 @@ void test_cache_capacity_boundaries(void)
 
       // Attempt to fetch a non-cached node — should fail with CACHE_FULL
       printf("\t\t  Fetching non-cached node_idx (expect BPTR_E_CACHE_FULL)...");
+      bptr_errno = BPTR_E_SUCCESS;
       node3 = bptr_node_fetch(bptr, 999);
       TEST_ASSERT_NULL_MESSAGE(node3,
                                "fetch should return NULL when cache full");

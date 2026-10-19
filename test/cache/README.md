@@ -16,6 +16,10 @@ slot preserves the retained alias and its dirty payload. Only the final release
 may let that slot be reused, after which both nodes must reload correctly.
 Both layouts and both pressure paths run all eight scenarios.
 
+Each expected-error probe clears `bptr_errno` before calling the library.
+In particular, capacity 1 cannot inherit capacity 0's `BPTR_E_FN_INPUT`;
+each invalid-input or cache-full call must supply its own error code.
+
 `test_cache_data_persistence` changes two keys and two values after flushing
 different baseline records, then leaves those changes dirty. A two-slot cache
 keeps the other node pinned, making the modified leaf the only eviction
@@ -62,3 +66,5 @@ It also rejects cache mutants that evict the queue tail, break queue links or
 leave a reactivated node in the eviction queue.
 Alias mutants omit or double active-hit increments and either drop all aliases
 on release or leak a reference; the retained-reference case must reject each.
+Error mutants return NULL without setting an error for capacities 0 and 1 or
+the cache-full probe; each must fail its own error-code assertion.

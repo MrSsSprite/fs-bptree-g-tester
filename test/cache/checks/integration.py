@@ -2,9 +2,9 @@
 """Exercise cache fixture isolation and disposable assertion/cache mutants."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import re
 import subprocess
 import tempfile
-import re
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -65,6 +65,21 @@ def policy_mutants(directory):
     ]
     for name, old, new in changes:
         yield build(directory, name, {relative: replace_once(source, old, new)}), "test_cache_reference_counting"
+
+
+def error_mutants(directory):
+    relative = "core/src/bptr_core.c"
+    source = (ROOT / relative).read_text()
+    anchor = "   /* Node must be large enough to at least contain"
+    for capacity in (0, 1):
+        mutant = replace_once(source, anchor,
+                              f"   if (cache_capacity == {capacity}) return NULL;\n\n" + anchor)
+        yield build(directory, f"errno-capacity-{capacity}-omitted", {relative: mutant})
+    relative = "core/src/bptr_cache.c"
+    source = (ROOT / relative).read_text()
+    anchor = "   if (node_idx == 0) { bptr_errno = BPTR_E_FN_INPUT; return NULL; }"
+    mutant = replace_once(source, anchor, "   if (node_idx == 999) return NULL;\n" + anchor)
+    yield build(directory, "errno-cache-full-omitted", {relative: mutant})
 
 
 def build(directory, name, sources):
@@ -187,6 +202,10 @@ def main():
             print("PASS: " + mutant.name + " closes its descriptor and removes owned files")
         for mutant, case in policy_mutants(directory):
             run(mutant, work, case, other_failures=True)
+            assert snapshot(work) == before, mutant.name + " leaked or changed fixtures"
+            print("PASS: detected " + mutant.name)
+        for mutant in error_mutants(directory):
+            run(mutant, work, "test_cache_capacity_boundaries")
             assert snapshot(work) == before, mutant.name + " leaked or changed fixtures"
             print("PASS: detected " + mutant.name)
         run(binary, work)
