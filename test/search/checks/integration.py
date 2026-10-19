@@ -325,7 +325,7 @@ def wrong_result(parent):
                      .replace(needle,
                               "(struct bptr_find_res){ is_found, node, srch_res + 1 }"))
     sources = [*sorted((ROOT / "test/search/src").glob("*.c")),
-               *sorted((ROOT / "test").glob("*.c")),
+               *sorted((ROOT / "test/helper").glob("*.c")),
                *sorted((ROOT / "core/src").glob("*.c")),
                ROOT / "deps/unity/src/unity.c"]
     sources = [mutant if source == ROOT / "core/src/bptr_core.c" else source
@@ -333,7 +333,7 @@ def wrong_result(parent):
     # temp_shape is shared naming support and deliberately not a library API.
     sources.append(ROOT / "utils/temp/src/temp_shape.c")
     binary = work / "search-mutant"
-    includes = [ROOT / "core", ROOT / "core/src", ROOT / "test",
+    includes = [ROOT / "core", ROOT / "core/src", ROOT / "test/helper",
                 ROOT / "deps/unity/src", ROOT / "utils/temp/src"]
     run([os.environ.get("CC", "cc"), "-Wall", "-Wextra", "-g",
          *[f"-I{path}" for path in includes], *sources, "-o", binary])

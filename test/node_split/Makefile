@@ -56,7 +56,7 @@ $(SHAPE_OBJ): $(SHAPE_SRC) ../../utils/temp/src/temp_shape.h ../../utils/temp/sr
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/$(TARGET_NAME)/%.o: %.c src/templates.h src/tools.h src/split_sampler.h $(TEST_DIR)/progress.h ../../utils/temp/src/temp_shape.h
+$(OBJ_DIR)/$(TARGET_NAME)/%.o: %.c src/templates.h src/tools.h src/split_sampler.h $(TEST_HELPER_DIR)/progress.h ../../utils/temp/src/temp_shape.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 

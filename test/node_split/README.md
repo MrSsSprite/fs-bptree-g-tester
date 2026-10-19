@@ -131,7 +131,7 @@ a log still says which position died:
 src/temp_split.c:...:test_full_split:FAIL: failed to verify the instance ...
 ```
 
-The shared `test/progress.{h,c}` helper holds those three calls:
+The shared `test/helper/progress.{h,c}` helper holds those three calls:
 `progress_update`, `progress_done` and `progress_break`. Any test unit can
 include `progress.h` directly or through `test_util.h`; the common build rules
 compile and link the helper automatically.
@@ -217,7 +217,7 @@ modifies a copy.
 | `src/main.c` | `main` (the directory argument, the notices and the empty-path warning) and the `test_temp` guard case |
 | `src/templates.{h,c}` | `struct template`, shared shape parsing, the canonical-name guard, the directory scan and `cmp_i64` |
 | `src/tools.{h,c}` | the `posix_spawn` runner (the tool's output is captured and replayed on stderr only when it fails) and the `temp_inst`/`temp_verify` wrappers |
-| `../progress.{h,c}` | shared live progress line and verdict helper: one line rewritten in place on a terminal, the verdicts alone in a redirected run |
+| `../helper/progress.{h,c}` | shared live progress line and verdict helper: one line rewritten in place on a terminal, the verdicts alone in a redirected run |
 | `src/temp_split.{h,c}` | the `test_full_split` case: descend, split, flush/close, verify and remove one instance at a time |
 | `src/split_sampler.{h,c}` | pure sampling and checked key/value arithmetic; independent small-tree and taller-tree strategies |
 | `checks/` | standalone sampler tests, instrumented lifecycle checks and isolated real-tool integration runs |

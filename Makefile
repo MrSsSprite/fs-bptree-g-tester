@@ -1,8 +1,8 @@
 include config.mk
 
-# 1. Automatically find all sub-directories in test/ and utils/
-# This results in lists like: flush node socket | temp
-TEST_UNITS := $(notdir $(patsubst %/,%,$(wildcard test/*/)))
+# 1. Discover runnable tests by their Makefiles, excluding support directories
+# such as test/helper/.
+TEST_UNITS := $(notdir $(patsubst %/,%,$(dir $(wildcard test/*/Makefile))))
 UTIL_UNITS := $(notdir $(patsubst %/,%,$(wildcard utils/*/)))
 
 .PHONY: all clean $(TEST_UNITS) $(UTIL_UNITS)

@@ -11,12 +11,13 @@ UNITY_DIR  := $(ROOT_DIR)/deps/unity
 CORE_DIR   := $(ROOT_DIR)/core
 SRC_DIR    := $(CORE_DIR)/src
 TEST_DIR   := $(ROOT_DIR)/test
+TEST_HELPER_DIR := $(TEST_DIR)/helper
 OBJ_DIR    := $(ROOT_DIR)/obj
 BIN_DIR    := $(ROOT_DIR)/bin
 RESULT_DIR := $(ROOT_DIR)/result
 
 CORE_H_DIRS := $(shell find $(CORE_DIR) -name "*.h" -exec dirname {} + | sort -u)
-TEST_UTIL_H_DIR := $(TEST_DIR)
+TEST_UTIL_H_DIR := $(TEST_HELPER_DIR)
 INCLDUES = $(UNITY_DIR)/src $(CORE_H_DIRS) $(TEST_UTIL_H_DIR)
 CPPFLAGS = $(addprefix -I, $(INCLDUES))
 
@@ -38,10 +39,10 @@ $(OBJ_DIR)/core/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-TEST_UTIL_SRCS := $(wildcard $(TEST_DIR)/*.c)
-TEST_UTIL_OBJS := $(patsubst $(TEST_DIR)/%.c, $(OBJ_DIR)/test_util/%.o, $(TEST_UTIL_SRCS))
-$(OBJ_DIR)/test_util/progress.o: $(TEST_DIR)/progress.h
-$(OBJ_DIR)/test_util/%.o: $(TEST_DIR)/%.c
+TEST_UTIL_SRCS := $(wildcard $(TEST_HELPER_DIR)/*.c)
+TEST_UTIL_OBJS := $(patsubst $(TEST_HELPER_DIR)/%.c, $(OBJ_DIR)/test_util/%.o, $(TEST_UTIL_SRCS))
+$(OBJ_DIR)/test_util/progress.o: $(TEST_HELPER_DIR)/progress.h
+$(OBJ_DIR)/test_util/%.o: $(TEST_HELPER_DIR)/%.c
 	@echo "Compiling test utility function: $<"
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
