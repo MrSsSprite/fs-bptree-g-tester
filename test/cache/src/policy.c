@@ -145,4 +145,70 @@ void test_cache_fifo_eviction(void)
                                              "cannot clean FIFO fixture");
              }
 }
+
+
+void test_cache_reference_counting(void)
+{
+   for (unsigned int lite = 0; lite < 2; lite++)
+      for (unsigned int allocate = 0; allocate < 2; allocate++)
+         for (size_t count = 2; count <= 3; count++)
+          {
+            struct bptr *tree = policy_prepare((_Bool)lite);
+            struct bptr_node *aliases[3], *other, *replacement, *hit, *reloaded;
+
+            printf("\tReferences (%s, %s, %zu aliases)...\n",
+                   lite ? "lite" : "normal", allocate ? "allocate" : "fetch", count);
+            aliases[0] = bptr_node_fetch(tree, 1);
+            other = bptr_node_fetch(tree, 2);
+            TEST_ASSERT_NOT_NULL(aliases[0]);
+            TEST_ASSERT_NOT_NULL(other);
+            policy_mark(aliases[0]);
+            policy_mark(other);
+            for (size_t i = 1; i < count; i++)
+             {
+               aliases[i] = bptr_node_fetch(tree, 1);
+               TEST_ASSERT_EQUAL_PTR_MESSAGE(aliases[0], aliases[i],
+                                             "active fetch did not return a shared node");
+             }
+
+            for (size_t i = 0; i + 1 < count; i++)
+             {
+               bptr_node_unload(tree, aliases[i]);
+               policy_assert_full(tree, 3); /* A still has at least one caller. */
+               policy_assert_node(aliases[count - 1], 1, 1);
+               policy_assert_node(other, 2, 1);
+
+               /* Cache hits must still work with no free or evictable slots. */
+               hit = bptr_node_fetch(tree, 1);
+               TEST_ASSERT_EQUAL_PTR(aliases[count - 1], hit);
+               bptr_node_unload(tree, hit);
+             }
+
+            /* Churn B's slot while the last alias continues to protect A. */
+            bptr_node_unload(tree, other);
+            replacement = allocate ? policy_new_leaf(tree) : bptr_node_fetch(tree, 3);
+            TEST_ASSERT_NOT_NULL(replacement);
+            TEST_ASSERT_EQUAL_PTR_MESSAGE(other, replacement,
+                                          "pressure evicted a node with a retained alias");
+            TEST_ASSERT_EQUAL_UINT64(allocate ? 4 : 3, replacement->node_idx);
+            policy_assert_node(aliases[count - 1], 1, 1);
+
+            /* Only the final release may make A's slot available again. */
+            bptr_node_unload(tree, aliases[count - 1]);
+            other = bptr_node_fetch(tree, 2);
+            TEST_ASSERT_NOT_NULL_MESSAGE(other, "final release did not make A evictable");
+            TEST_ASSERT_EQUAL_PTR(aliases[0], other);
+            policy_assert_node(other, 2, 0);
+            policy_assert_full(tree, 1);
+
+            bptr_node_unload(tree, other);
+            reloaded = bptr_node_fetch(tree, 1);
+            TEST_ASSERT_EQUAL_PTR(other, reloaded);
+            policy_assert_node(reloaded, 1, 0);
+            bptr_node_unload(tree, reloaded);
+            bptr_node_unload(tree, replacement);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(0, cache_fixture_discard(),
+                                          "cannot clean reference-count fixture");
+          }
+}
 /*--------------------------- Public Functions END ---------------------------*/

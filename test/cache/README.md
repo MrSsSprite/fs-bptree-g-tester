@@ -9,6 +9,13 @@ The survivor must retain its pointer and dirty payload, while the victim must
 miss in a pinned cache and reload cleanly from disk. Both pointer layouts run
 all 16 scenarios; choosing the newest node cannot satisfy these checks.
 
+`test_cache_reference_counting` holds two or three aliases to the same node.
+Every intermediate release must leave it pinned while a valid disk-only fetch
+fails for lack of space; cached hits must still succeed. Churn of the other
+slot preserves the retained alias and its dirty payload. Only the final release
+may let that slot be reused, after which both nodes must reload correctly.
+Both layouts and both pressure paths run all eight scenarios.
+
 `test_cache_data_persistence` changes two keys and two values after flushing
 different baseline records, then leaves those changes dirty. A two-slot cache
 keeps the other node pinned, making the modified leaf the only eviction
@@ -44,7 +51,7 @@ Build with `make clean && make cache`, then run `./bin/cache` from the worktree
 root. Each run creates a private directory under `bptr_files/` and keeps every
 fixture inside it, so concurrent cache runs and caller-prepared images do not
 interfere. Unity teardown unloads and removes owned fixtures even when an
-assertion aborts a case. All eight cases remove their private directory on exit;
+assertion aborts a case. All nine cases remove their private directory on exit;
 cleanup errors make the run fail.
 
 `make -C test/cache check` checks repeat and concurrent runs with existing
@@ -53,3 +60,5 @@ of fixture and verify that teardown closes its file descriptor and removes
 owned files, including an unexpected non-NULL result for an invalid capacity.
 It also rejects cache mutants that evict the queue tail, break queue links or
 leave a reactivated node in the eviction queue.
+Alias mutants omit or double active-hit increments and either drop all aliases
+on release or leak a reference; the retained-reference case must reject each.

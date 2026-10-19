@@ -40,6 +40,7 @@ int main(void)
    RUN_TEST(test_cache_fetch_persistence);
    RUN_TEST(test_cache_capacity_boundaries);
    RUN_TEST(test_cache_fifo_eviction);
+   RUN_TEST(test_cache_reference_counting);
    RUN_TEST(test_cache_hash_collisions);
    RUN_TEST(test_cache_hash_collision_deletion);
 

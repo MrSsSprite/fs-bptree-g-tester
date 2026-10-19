@@ -8,7 +8,7 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CASE_COUNT = 8
+CASE_COUNT = 9
 
 
 def replace_once(source, old, new):
@@ -53,6 +53,18 @@ def policy_mutants(directory):
     ]
     for name, old, new in changes:
         yield build(directory, name, {relative: replace_once(source, old, new)}), "test_cache_fifo_eviction"
+    changes = [
+        ("refs-active-hit-not-counted", "         pool_en->refcnt++;",
+         "         if (pool_en->refcnt == 1) pool_en->refcnt++;"),
+        ("refs-active-hit-counted-twice", "         pool_en->refcnt++;",
+         "         pool_en->refcnt += pool_en->refcnt >= 2 ? 2 : 1;"),
+        ("refs-release-drops-all-aliases", "   if (--pool_en->refcnt == 1)",
+         "   if ((pool_en->refcnt = pool_en->refcnt > 2 ? 1 : pool_en->refcnt - 1) == 1)"),
+        ("refs-release-leaks-alias", "   if (--pool_en->refcnt == 1)",
+         "   if ((pool_en->refcnt == 3 ? pool_en->refcnt : --pool_en->refcnt) == 1)"),
+    ]
+    for name, old, new in changes:
+        yield build(directory, name, {relative: replace_once(source, old, new)}), "test_cache_reference_counting"
 
 
 def build(directory, name, sources):
@@ -115,6 +127,8 @@ def cleanup_mutants(directory):
          "\n   bptr = cache_fixture_create(&template);", "bptr"),
         ("capacity", "test/cache/src/cache.c", "test_cache_capacity_boundaries",
          "\n      bptr = cache_fixture_create(&template);", "bptr"),
+        ("policy", "test/cache/src/policy.c", "test_cache_fifo_eviction",
+         "   struct bptr *tree = cache_fixture_create(&template);", "tree"),
         ("collision", "test/cache/src/collisions.c", "test_cache_hash_collisions",
          '   TEST_ASSERT_NOT_NULL_MESSAGE(collision_tree, "cannot reopen collision fixture");',
          "collision_tree"),
