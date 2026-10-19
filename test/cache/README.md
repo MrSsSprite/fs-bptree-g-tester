@@ -2,6 +2,13 @@
 This unit tests the node cache mechanism — pool allocation, hash table lookup,
 reference counting, FIFO eviction, dirty-node flush, and cache-full handling.
 
+`test_cache_fifo_eviction` releases two cached nodes in both orders, with an
+optional cache hit and final release that moves the oldest entry to the tail.
+Both allocation and fetch pressure must reuse the oldest released node's slot.
+The survivor must retain its pointer and dirty payload, while the victim must
+miss in a pinned cache and reload cleanly from disk. Both pointer layouts run
+all 16 scenarios; choosing the newest node cannot satisfy these checks.
+
 `test_cache_data_persistence` changes two keys and two values after flushing
 different baseline records, then leaves those changes dirty. A two-slot cache
 keeps the other node pinned, making the modified leaf the only eviction
@@ -37,10 +44,12 @@ Build with `make clean && make cache`, then run `./bin/cache` from the worktree
 root. Each run creates a private directory under `bptr_files/` and keeps every
 fixture inside it, so concurrent cache runs and caller-prepared images do not
 interfere. Unity teardown unloads and removes owned fixtures even when an
-assertion aborts a case. All seven cases remove their private directory on exit;
+assertion aborts a case. All eight cases remove their private directory on exit;
 cleanup errors make the run fail.
 
 `make -C test/cache check` checks repeat and concurrent runs with existing
 caller fixtures. Disposable assertion mutants fail after acquiring each kind
 of fixture and verify that teardown closes its file descriptor and removes
 owned files, including an unexpected non-NULL result for an invalid capacity.
+It also rejects cache mutants that evict the queue tail, break queue links or
+leave a reactivated node in the eviction queue.

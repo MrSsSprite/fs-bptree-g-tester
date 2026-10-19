@@ -4,10 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import tempfile
+import re
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CASE_COUNT = 7
+CASE_COUNT = 8
 
 
 def replace_once(source, old, new):
@@ -22,16 +23,36 @@ def snapshot(directory):
     }
 
 
-def run(binary, directory, failed_case=None):
+def run(binary, directory, failed_case=None, other_failures=False):
     result = subprocess.run([str(binary)], cwd=directory, capture_output=True,
                             text=True, timeout=10)
-    failures = 1 if failed_case else 0
+    summary = re.search(r"(\d+) Tests (\d+) Failures", result.stdout)
+    assert summary and int(summary[1]) == CASE_COUNT, result.stdout
+    failures = int(summary[2])
+    assert failures >= 1 if failed_case else failures == 0, result.stdout
+    if failed_case and not other_failures:
+        assert failures == 1, result.stdout
     assert result.returncode == failures, result.stdout + result.stderr
     assert f"{CASE_COUNT} Tests {failures} Failures" in result.stdout, result.stdout
     if failed_case:
         assert f":{failed_case}:FAIL:" in result.stdout, result.stdout
     assert not result.stderr, result.stderr
     return result
+
+
+def policy_mutants(directory):
+    relative = "core/src/bptr_cache.c"
+    source = (ROOT / relative).read_text()
+    changes = [
+        ("fifo-uses-tail", "   uint64_t ret = cache->evict_head;",
+         "   uint64_t ret = cache->evict_tail;"),
+        ("fifo-unlinked-tail", "   GET_POOL_EN(cache, cache->evict_tail)->evict_next = pool_idx;",
+         "   /* old tail was not linked */"),
+        ("fifo-hit-keeps-queue-entry", "         if (pool_en->refcnt == 1)",
+         "         if (0)"),
+    ]
+    for name, old, new in changes:
+        yield build(directory, name, {relative: replace_once(source, old, new)}), "test_cache_fifo_eviction"
 
 
 def build(directory, name, sources):
@@ -150,6 +171,10 @@ def main():
             run(mutant, work, case)
             assert snapshot(work) == before, mutant.name + " leaked or changed fixtures"
             print("PASS: " + mutant.name + " closes its descriptor and removes owned files")
+        for mutant, case in policy_mutants(directory):
+            run(mutant, work, case, other_failures=True)
+            assert snapshot(work) == before, mutant.name + " leaked or changed fixtures"
+            print("PASS: detected " + mutant.name)
         run(binary, work)
         assert snapshot(work) == before, "retry after failures changed caller files"
 

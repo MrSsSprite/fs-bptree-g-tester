@@ -97,6 +97,16 @@ int cache_fixture_unload(void)
 }
 
 
+struct bptr *cache_fixture_load(uint64_t capacity, int (*compare)(const void *, const void *))
+{
+   TEST_ASSERT_TRUE_MESSAGE(fixture_owned, "no owned fixture to load");
+   TEST_ASSERT_NULL_MESSAGE(fixture_tree, "fixture is still open");
+   fixture_tree = bptr_load(fixture_path, capacity, compare);
+   TEST_ASSERT_NOT_NULL_MESSAGE(fixture_tree, "cannot reload cache fixture");
+   return fixture_tree;
+}
+
+
 int cache_fixture_discard(void)
 {
    int unload_status = BPTR_E_SUCCESS, remove_status = 0;
