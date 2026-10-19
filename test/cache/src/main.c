@@ -6,7 +6,7 @@
 
 /*------------------------------- Unity Setup --------------------------------*/
 void setUp(void) { }
-void tearDown(void) { }
+void tearDown(void) { cache_collisions_cleanup(); }
 /*----------------------------- Unity Setup END ------------------------------*/
 
 
@@ -20,6 +20,7 @@ int main(void)
    RUN_TEST(test_cache_node_lifecycle);
    RUN_TEST(test_cache_data_persistence);
    RUN_TEST(test_cache_capacity_boundaries);
+   RUN_TEST(test_cache_hash_collisions);
 
    return UNITY_END();
 }
