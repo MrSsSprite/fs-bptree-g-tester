@@ -1,5 +1,39 @@
 # Template utilities
 
+## External comparator ABI
+
+`src/temp_compare.h` defines a standalone POSIX comparator loader. A test-owned
+shared library exports `temp_comparator_v1()` (with C linkage for C++), returning
+a static `struct temp_comparator_descriptor_v1`. Set `abi_version` to
+`TEMP_COMPARATOR_ABI_V1`, `struct_size` to `sizeof` the descriptor, `reserved` to
+zero, and provide a nonempty versioned ID, exact key width, and callback:
+
+```c
+int compare(const void *lhs, const void *rhs);
+```
+
+Negative, zero, and positive results mean before, equivalent, and after.
+Callbacks must define a consistent order and read only the declared key bytes.
+They need not return unit magnitudes. See `tests/comparator_plugin.c` for an
+ID-only comparator that ignores a key's tag. The callback has no context
+parameter; use case-specific immutable configuration, not a mutable global
+configuration shared by trees with different orders.
+
+Call `temp_comparator_open` with a zero-initialized module, library path, key
+width, and optional expected ID. Missing symbols, incompatible ABI/width, and
+wrong IDs fail explicitly. Keep the module open until all trees and checks
+using its callback are finished; `temp_comparator_close` clears its borrowed
+pointers. The loader does not call or depend on the core library.
+
+`make -C utils/temp check-comparator` builds and exercises an external module.
+The build probes whether `dlopen` needs `-ldl`. Override `DL_LIBS`,
+`PLUGIN_CFLAGS`, and `PLUGIN_LDFLAGS` for other POSIX toolchains or cross builds.
+The default module flags are `-fPIC -dynamiclib` on Darwin and `-fPIC -shared`
+elsewhere. Module filenames need not have a particular suffix.
+
+The manifest CLI described below will expose this loader; the legacy lattice
+commands continue to use their existing integer comparator.
+
 Three stand-alone programs that build, copy and check deterministic tree
 images for tests. Nodes are full by default; individual nodes can have explicit
 key counts:

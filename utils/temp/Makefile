@@ -11,12 +11,23 @@ TARGETS := temp_gen temp_inst temp_verify
 BINS    := $(addprefix $(BIN_DIR)/, $(TARGETS))
 SHAPE_OBJ := $(TU_OBJ_DIR)/temp_shape.o
 
+# dlopen is in libc on some POSIX systems and libdl on others. Probe the linker
+# rather than assume Linux or Darwin. Cross builds may override DL_LIBS and the
+# compiler-specific shared-library flags on the make command line.
+DL_LIBS ?= $(shell t=$${TMPDIR:-/tmp}/bptr-dl-probe.$$$$; \
+ if (umask 077 && mkdir "$$t"); then \
+ printf '%s\n' '\#include <dlfcn.h>' 'int main(void) { return dlopen(0, RTLD_NOW) == 0; }' > "$$t/probe.c"; \
+ if $(CC) "$$t/probe.c" -o "$$t/probe" >/dev/null 2>&1; then :; else printf '%s' '-ldl'; fi; \
+ rm -rf "$$t"; else printf '%s' '-ldl'; fi)
+PLUGIN_CFLAGS ?= -fPIC
+PLUGIN_LDFLAGS ?= $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
+
 .PHONY: all check clean
 
 all: $(BINS)
 
 # Keep arithmetic boundaries testable without allocating enormous templates.
-check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits $(TU_OBJ_DIR)/test_shape_limits
+check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits $(TU_OBJ_DIR)/test_shape_limits check-comparator
 	$(TU_OBJ_DIR)/test_pointer_limits
 	$(TU_OBJ_DIR)/test_shape_limits
 	python3 test/pointer_overflow.py $(BIN_DIR)/temp_gen $(BIN_DIR)/temp_verify
@@ -26,6 +37,18 @@ check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits $(TU_OBJ_DIR)/test_shape_limits
 	python3 tests/test_verify_overflow.py
 	python3 tests/test_verify_occupancy.py
 	python3 tests/test_shapes.py
+
+.PHONY: check-comparator
+check-comparator: $(TU_OBJ_DIR)/test_comparator $(TU_OBJ_DIR)/comparator_plugin.so
+	$(TU_OBJ_DIR)/test_comparator $(TU_OBJ_DIR)/comparator_plugin.so
+
+$(TU_OBJ_DIR)/test_comparator: test/comparator.c src/temp_compare.c src/temp_compare.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Isrc test/comparator.c src/temp_compare.c $(DL_LIBS) -o $@
+
+$(TU_OBJ_DIR)/comparator_plugin.so: tests/comparator_plugin.c src/temp_compare.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(PLUGIN_CFLAGS) $(PLUGIN_LDFLAGS) -Isrc $< -o $@
 
 $(TU_OBJ_DIR)/test_pointer_limits: test/pointer_limits.c src/temp_full.c \
                                  src/temp_full.h src/temp_shape.h $(SHAPE_OBJ) $(CORE_OBJS)
