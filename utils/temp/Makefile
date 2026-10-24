@@ -28,7 +28,7 @@ PLUGIN_LDFLAGS ?= $(if $(filter Darwin,$(shell uname -s)),-dynamiclib,-shared)
 all: $(BINS)
 
 # Keep arithmetic boundaries testable without allocating enormous templates.
-check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits $(TU_OBJ_DIR)/test_shape_limits check-comparator check-image check-manifest
+check: $(BINS) $(TU_OBJ_DIR)/test_pointer_limits $(TU_OBJ_DIR)/test_shape_limits check-comparator check-image check-manifest check-empty
 	$(TU_OBJ_DIR)/test_pointer_limits
 	$(TU_OBJ_DIR)/test_shape_limits
 	python3 test/pointer_overflow.py $(BIN_DIR)/temp_gen $(BIN_DIR)/temp_verify
@@ -58,6 +58,13 @@ check-image: $(TU_OBJ_DIR)/test_image
 $(TU_OBJ_DIR)/test_image: test/image.c src/temp_image.c src/temp_image.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Isrc test/image.c src/temp_image.c -o $@
+
+.PHONY: check-empty
+check-empty: $(TU_OBJ_DIR)/test_empty_image
+	$(TU_OBJ_DIR)/test_empty_image
+
+$(TU_OBJ_DIR)/test_empty_image: test/empty_image.c $(TU_OBJ_DIR)/temp_image.o $(CORE_OBJS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -Isrc $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 .PHONY: check-manifest
 check-manifest: $(BINS) check-comparator $(TU_OBJ_DIR)/manifest_gen $(TU_OBJ_DIR)/manifest_verify

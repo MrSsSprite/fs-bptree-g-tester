@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import random
 import shlex
 import shutil
 import struct
@@ -371,6 +372,47 @@ class ManifestTests(unittest.TestCase):
                      b'{"x":"\\ud800"}', b'{"x":"\xc0\x80"}', b'{}\0{}', b'[' * 66 + b']' * 66]:
             path.write_bytes(data)
             self.run_tool([GEN, "--json", "--spec", path, "--out", self.work / "bad.bptr"], 2)
+
+    def test_manifest_size_boundary_and_unicode(self):
+        document = spec(pairs(1))
+        document["initial_shape"] = {"height": 1, "node_keys": {"root": 1}}
+        path = self.work / "large.json"
+        encoded = json.dumps(document).encode()
+        padded = encoded + b" " * (16 * 1024 * 1024 - len(encoded))
+        path.write_bytes(padded)
+        self.run_tool([GEN, "--json", "--spec", path, "--out", self.work / "large.bptr"])
+        path.write_bytes(padded + b" ")
+        self.run_tool([GEN, "--json", "--spec", path, "--out", self.work / "large.bptr"], 2)
+        # Exercise both raw UTF-8 and a surrogate pair through recognized ID
+        # fields. A valid Unicode string must reach profile validation.
+        for profile in ("\U0001f332", "é"):
+            document["comparator"]["profile"] = profile
+            for escaped in (False, True):
+                path.write_text(json.dumps(document, ensure_ascii=escaped), encoding="utf-8")
+                result = self.run_tool([GEN, "--json", "--spec", path, "--out", self.work / "unicode.bptr"], 2)
+                self.assertIn("unknown comparator", result["detail"])
+
+    def test_io_failures_and_seeded_mutations(self):
+        document = spec(pairs(6))
+        self.run_tool([VERIFY, "--json", "--expect", self.save(document), self.work / "missing.bptr"], 3)
+        parent = self.work / "parent"
+        parent.write_bytes(b"untouched")
+        document["initial_shape"] = {"height": 2, "node_keys": {"root": 1, "0": 3, "1": 3}}
+        self.generate(document, 3, name="parent/child.bptr")
+        self.assertEqual(parent.read_bytes(), b"untouched")
+        original = encode(document, Node(children=[Node(pairs(6)[:3]), Node(pairs(6)[3:])]))
+        rng = random.Random(90210)
+        image = self.work / "mutant.bptr"
+        for _ in range(100):
+            mutated = bytearray(original)
+            index = rng.randrange(len(mutated))
+            mutated[index] ^= 1 << rng.randrange(8)
+            image.write_bytes(mutated)
+            result = subprocess.run([str(VERIFY), "--json", "--expect", str(self.save(document)), str(image)],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertIn(result.returncode, (0, 1), result)
+            self.assertEqual(json.loads(result.stdout)["status"], result.returncode)
+            self.assertEqual(image.read_bytes(), mutated)
 
 
 if __name__ == "__main__":

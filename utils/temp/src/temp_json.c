@@ -33,7 +33,16 @@ static int codepoint(struct parser *p, unsigned *value)
 static char *string(struct parser *p)
 {
     if (p->p == p->end || *p->p++ != '"') { bad(p, "expected string"); return NULL; }
-    char *out = malloc((size_t)(p->end - p->p) + 1), *at = out;
+    const unsigned char *stop = p->p;
+    while (stop < p->end && *stop != '"') {
+        if (*stop == '\\' && stop + 1 < p->end) stop += 2;
+        else ++stop;
+    }
+    if (stop == p->end) { bad(p, "unterminated string"); return NULL; }
+    /* Decoding escapes can only shrink this span. Allocate per string rather
+     * than per remaining document: many small fields otherwise reserve O(n^2)
+     * virtual memory for a perfectly valid large manifest. */
+    char *out = malloc((size_t)(stop - p->p) + 1), *at = out;
     if (!out) { bad(p, "out of memory"); return NULL; }
     while (p->p < p->end) {
         unsigned c = *p->p++;
@@ -170,7 +179,11 @@ struct temp_json *temp_json_read(const char *path, char *error, size_t size)
         length += n;
         if (ferror(file)) { snprintf(error, size, "cannot read manifest: %s", strerror(errno)); goto done; }
         if (feof(file)) break;
-        if (capacity == 16u * 1024u * 1024u) { snprintf(error, size, "manifest exceeds 16 MiB"); goto done; }
+        if (capacity == 16u * 1024u * 1024u) {
+            int extra = fgetc(file);
+            if (extra == EOF && !ferror(file)) break;
+            snprintf(error, size, "manifest exceeds 16 MiB or cannot be read"); goto done;
+        }
         capacity *= 2;
         unsigned char *grown = realloc(buffer, capacity);
         if (!grown) goto allocation;
