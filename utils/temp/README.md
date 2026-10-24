@@ -31,8 +31,36 @@ The build probes whether `dlopen` needs `-ldl`. Override `DL_LIBS`,
 The default module flags are `-fPIC -dynamiclib` on Darwin and `-fPIC -shared`
 elsewhere. Module filenames need not have a particular suffix.
 
-The manifest CLI described below will expose this loader; the legacy lattice
-commands continue to use their existing integer comparator.
+The manifest CLI will expose this loader; the legacy lattice commands continue
+to use their existing integer comparator.
+
+## Independent image API
+
+`src/temp_image.h` exposes normal result-returning planning, generation, and
+verification functions, independent of both core and Unity. Layout, sparse
+occupancy, expected record stream, comparison callback/context, and optional
+topology constraints are separate borrowed descriptors. See `FORMAT.md` for
+the precise native-byte-order image contract and supported geometry.
+
+`temp_image_verify` always checks structural validity. Pass a record source to
+compare every key/value byte, or NULL for a structural inspection. Pass an
+exact shape only for pristine-fixture checks; otherwise any legal final shape
+is accepted. Optional height/node/leaf constraints can be asserted individually.
+Records are globally strict in comparator order, so equivalent duplicates are
+rejected even across leaf boundaries. Child traversal independently determines
+sibling order and detects repeated ownership, cycles, orphan blocks, bad free
+lists, and inconsistent header totals.
+
+`temp_image_generate` validates geometry and record ordering before creating
+directories or a file, builds the image without calling core, and reuses an
+existing image only after exact read-only verification. Failed owned outputs
+are removed. An empty shape is height 0 with zero records and no overrides;
+it is verified explicitly, never skipped.
+
+Results distinguish invalid images (1), invalid specifications (2), I/O errors
+(3), and resource exhaustion (4), with invariant, node, slot, record, detail,
+and observed totals. Callers may translate these results into Unity assertions.
+`make -C utils/temp check-image` compiles and runs the API without core objects.
 
 Three stand-alone programs that build, copy and check deterministic tree
 images for tests. Nodes are full by default; individual nodes can have explicit
