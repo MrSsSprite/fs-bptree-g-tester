@@ -1,5 +1,10 @@
 # Template utilities
 
+For arbitrary binary records, custom comparators, multiple-operation expected
+maps, empty trees, and read-only independent verification, use the new
+[manifest mode](MANIFEST.md). Start with `examples/binary.json` or
+`examples/lattice.json`. The legacy lattice interface remains available below.
+
 ## External comparator ABI
 
 `src/temp_compare.h` defines a standalone POSIX comparator loader. A test-owned
@@ -31,7 +36,7 @@ The build probes whether `dlopen` needs `-ldl`. Override `DL_LIBS`,
 The default module flags are `-fPIC -dynamiclib` on Darwin and `-fPIC -shared`
 elsewhere. Module filenames need not have a particular suffix.
 
-The manifest CLI will expose this loader; the legacy lattice commands continue
+The manifest CLI exposes this loader; the legacy lattice commands continue
 to use their existing integer comparator.
 
 ## Independent image API
@@ -503,7 +508,7 @@ verifier expects a Unity assertion frame. Existing `temp_full_path`,
 `temp_full_generate`, and `temp_full_verify` retain their signatures and
 full-tree behavior.
 
-## Limits
+## Legacy lattice limits
 
 - The generator serves `lay_cnt` 1..254: one node stays pinned per level while
   its subtree is filled and the cache holds 256 slots. Full-tree image size grows as

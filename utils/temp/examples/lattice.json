@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "layout": {"lite": false, "node_size": 128, "key_size": 8, "value_size": 8},
+  "comparator": {"profile": "i64-desc"},
+  "initial_shape": {"height": 1, "node_keys": {"root": 3}},
+  "records": {
+    "kind": "i64-lattice", "count": 3,
+    "start": "9223372036854775807", "step": "-1",
+    "value_start": "-9223372036854775808", "value_step": "1"
+  }
+}
