@@ -7,6 +7,7 @@ from pathlib import Path
 import random
 import shlex
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -107,9 +108,9 @@ class ManifestTests(unittest.TestCase):
         path.write_text(json.dumps(document), encoding="utf-8")
         return path
 
-    def run_tool(self, command, status=0):
+    def run_tool(self, command, status=0, timeout=10):
         result = subprocess.run([str(x) for x in command], capture_output=True,
-                                text=True, timeout=10)
+                                text=True, timeout=timeout)
         self.assertEqual(result.returncode, status, result)
         out = json.loads(result.stdout)
         self.assertEqual(out["status"], status)
@@ -413,6 +414,30 @@ class ManifestTests(unittest.TestCase):
             self.assertIn(result.returncode, (0, 1), result)
             self.assertEqual(json.loads(result.stdout)["status"], result.returncode)
             self.assertEqual(image.read_bytes(), mutated)
+
+    def test_fifo_images_are_rejected_without_blocking(self):
+        document = spec(pairs(1))
+        document["initial_shape"] = {"height": 1, "node_keys": {"root": 1}}
+        manifest = self.save(document)
+        fifo = self.work / "image.bptr"
+        os.mkfifo(fifo)
+        original = fifo.stat()
+        alias = self.work / "image-link.bptr"
+        alias.symlink_to(fifo.name)
+        for path in (fifo, alias):
+            for name, command in (
+                ("verify", [VERIFY, "--json", "--expect", manifest, path]),
+                ("generate-reuse", [GEN, "--json", "--spec", manifest, "--out", path]),
+            ):
+                with self.subTest(path=path.name, operation=name):
+                    # No FIFO peer is present. A blocking open must fail this
+                    # regression promptly instead of hanging the test runner.
+                    report = self.run_tool(command, status=1, timeout=2)
+                    self.assertEqual(report["invariant"], "extent")
+                    self.assertFalse(report["reused"])
+                    self.assertTrue(stat.S_ISFIFO(fifo.stat().st_mode))
+                    self.assertEqual(fifo.stat().st_ino, original.st_ino)
+                    self.assertTrue(alias.is_symlink())
 
 
 if __name__ == "__main__":

@@ -292,7 +292,8 @@ int temp_image_verify(const char *path, const struct temp_layout *l,
         struct temp_image_stats planned;
         if (temp_image_plan(l, shape, &planned, r)) return r->status;
     }
-    v.fd = open(path, O_RDONLY);
+    /* Let fstat reject FIFOs without waiting for a peer during open. */
+    v.fd = open(path, O_RDONLY | O_NONBLOCK);
     if (v.fd < 0) return fail(r, TEMP_IMAGE_IO, "open", "%s", strerror(errno));
     if (fstat(v.fd, &st) != 0) { fail(r, TEMP_IMAGE_IO, "stat", "%s", strerror(errno)); goto done; }
     if (!S_ISREG(st.st_mode) || st.st_size < (off_t)l->node_size || st.st_size % l->node_size) {
