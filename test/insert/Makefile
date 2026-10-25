@@ -10,7 +10,7 @@ UNIT_OBJS := $(addprefix $(UNIT_OBJ_DIR)/src/,$(UNIT_SRCS:.c=.o))
 IMAGE_OBJ := $(UNIT_OBJ_DIR)/common/temp_image.o
 ORACLE_CHECK := $(UNIT_OBJ_DIR)/checks/oracle
 
-.PHONY: all check check-oracle clean
+.PHONY: all check check-harness check-oracle clean
 all: $(TARGET)
 
 $(TARGET): $(UNIT_OBJS) $(IMAGE_OBJ) $(PREREQ_OBJS)
@@ -32,8 +32,11 @@ $(ORACLE_CHECK): checks/oracle.c src/oracle.c src/oracle.h
 check-oracle: $(ORACLE_CHECK)
 	$(ORACLE_CHECK)
 
-check: all check-oracle
-	cd $(ROOT_DIR) && $(TARGET)
+check-harness: all check-oracle
+	CC='$(CC)' python3 checks/integration.py
+
+check: check-harness
+	cd "$(ROOT_DIR)" && "$(TARGET)"
 
 clean:
 	rm -rf $(UNIT_OBJ_DIR) $(TARGET)

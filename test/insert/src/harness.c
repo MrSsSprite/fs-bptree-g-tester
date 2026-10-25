@@ -307,12 +307,20 @@ void insert_expect_error(const void *key, const void *value, int expected,
 
 void insert_check_live(void)
 {
+    insert_state.live_checks++;
+    totals.live_checks++;
+    const struct temp_layout *layout = &insert_state.config.layout;
+    const struct bptr *tree = insert_state.tree;
+    insert_require(tree != NULL && tree->is_lite == layout->is_lite &&
+                   tree->node_size == layout->node_size &&
+                   tree->key_size == layout->key_size &&
+                   tree->value_size == layout->value_size &&
+                   tree->compare == insert_state.config.compare,
+                   "live instance configuration changed");
     char reason[768];
     int status = insert_live_verify(insert_state.tree, &insert_state.model,
                                     reason, sizeof reason);
     insert_require(status == 0, "%s", reason);
-    insert_state.live_checks++;
-    totals.live_checks++;
 }
 
 static void release_references(void)

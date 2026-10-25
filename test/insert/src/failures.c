@@ -147,6 +147,31 @@ void test_insert_cache_errors(void)
         release(1);
         require_reusable_slots(first, last);
         insert_discard();
+
+        /* Both search nodes are already pinned, so an absent-key search can
+         * finish without a free slot. Inserting into this full target leaf
+         * then needs an additional node while both slots remain occupied. */
+        prepare("cache-split", (_Bool)layout);
+        leaf_indices(&first, &last);
+        pin(insert_state.tree->root_idx, 0);
+        pin(first, 1);
+        const int64_t fresh = -101;
+        struct bptr_find_res position = bptr_find_node(insert_state.tree, &fresh);
+        insert_state.refs[2] = position.node;
+        insert_require(position.node != NULL,
+                       "split failure setup cannot search pinned target (error %d)",
+                       bptr_errno);
+        insert_require(!position.is_found && position.idx == 0 &&
+                       position.node->node_idx == first &&
+                       position.node->key_count ==
+                           insert_state.tree->node_bound.leaf.up - 1,
+                       "split failure setup requires absent position in full target");
+        release(2);
+        insert_expect_error(&fresh, &replacement, BPTR_E_CACHE_FULL,
+                            "full-leaf split allocation");
+        release(0);
+        release(1);
+        insert_discard();
     }
 }
 

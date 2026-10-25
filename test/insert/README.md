@@ -17,6 +17,7 @@ make insert
 ./bin/insert --case permutations --layout normal
 ./bin/insert --case growth --seed 12345 --work-dir .cache/insert-replay
 make -C test/insert check-oracle
+make -C test/insert check-harness
 make -C test/insert check
 ```
 
@@ -24,6 +25,9 @@ No input directory or prebuilt templates are required. The default work
 directory is `.cache/insert`; each scenario creates a private `run-XXXXXX`
 directory beneath it. Successful scenarios remove only their own files and
 directory. Existing work directories and unrelated files are left alone.
+After switching branches or core/header revisions, use `make clean` before
+building: the repository's shared core-object rules do not track headers or
+the revision that produced an existing object.
 
 `--case NAME` selects one group, or `all` selects every group; `all` is the
 default. Each group is registered separately for normal and lite layouts, so
@@ -37,7 +41,8 @@ the shuffled workloads. Unknown groups, invalid arguments, setup failures,
 and assertion failures produce a nonzero exit status. The final summary
 reports the scenarios and insertion attempts actually executed, including
 successful inserts, duplicates, expected resource errors, live checks, and
-persistence checkpoints. There is no empty-template-directory success path.
+completed persistence checkpoints. Live-check totals include failed
+observations. There is no empty-template-directory success path.
 
 ## Two independent observations
 
@@ -84,6 +89,7 @@ Every group exercises both lite and normal layouts.
 
 | Group | Scenarios |
 | --- | --- |
+| `empty` | Initialized and independently generated rootless images; empty unload/reload, first root creation, input overwrite, duplicate rejection, and continued growth. |
 | `permutations` | All permutations of four keys; duplicates against the full root leaf; reopen, grow, and retry existing keys. |
 | `growth` | Ascending, descending, alternating-end, and seeded shuffled insertions; repeated duplicates; multiple checkpoints; one-record leaves. |
 | `comparators` | Ascending and descending signed order with non-unit comparison results; signed integer extremes and values whose numeric and byte orders differ. |
@@ -92,7 +98,7 @@ Every group exercises both lite and normal layouts.
 | `ownership` | Unaligned guarded buffers, input immutability, separate key/value overwrite and release, exact-sized allocations, allocation reuse, and identical or overlapping key/value storage. |
 | `fixtures` | Independently generated full trees, parents or higher ancestors with space, asymmetric occupancy, and tall trees with one-record leaves. Heights 1 and 2 exhaust insertion gaps in the selected full and parent-room shapes; taller shapes use explicit boundary/interior samples. |
 | `cache` | Minimum two-slot cache for root insertion and cold searches with room, plus a working set larger than a 16-slot cache. |
-| `cache-errors` | Pinned unrelated leaves block the initial root fetch; a pinned root and unrelated leaf block the descendant fetch. External pins are then released and both slots reacquired to detect leaked references. |
+| `cache-errors` | Pins block root and descendant fetches, followed by cache-slot reuse checks. A separate full-leaf case permits search under the pins but blocks allocation needed by insertion. |
 | `io-errors` | Cold loads of disposable images truncated before a root or target descendant, checking propagated read errors. |
 
 The harness snapshots both caller buffers around every insertion attempt and
@@ -107,6 +113,8 @@ post-error mapping with the previous state, or infer a successful retry policy
 from the public contract. Intentionally truncated images are discarded after
 their expected failures. The minimum-cache success scenarios avoid assuming
 that a cache of two can support arbitrary split cascades.
+Reacquiring cache slots after a deliberately blocked search is a supplementary
+reference-lifecycle check, rather than a generic post-error usability guarantee.
 
 ## Failure evidence and checker checks
 
@@ -129,9 +137,25 @@ for a live-state failure, `failure.txt` and the operation log record the primary
 evidence at the time of failure. A persisted image alone cannot reconstruct
 every transient cache defect.
 
-`check-oracle` runs isolated reference-model and live-observer regressions.
-`check` additionally runs the insertion executable and fails when insertion
-violates the contract. The new unit sources and independent image backend are compiled as
+`check-oracle` runs 78 isolated reference-model and live-observer observations,
+including deliberately malformed hand-built graphs and reference balancing.
+`check-harness` also checks CLI validation, successful-case cleanup, preservation
+of unrelated files, seed replay, and diagnostic artifacts. It compiles separate
+tester objects that redirect public calls through test-owned adversaries;
+existing core objects remain untouched. The adversaries cover wrong return
+codes, falsely successful duplicates, caller-buffer writes, live count/value
+damage, and persisted-only payload damage. The live adversaries are repaired
+during unload, proving that the earlier live check still fails when the final
+image would pass. Stale-errno checks cover success, duplicates, and real
+resource errors.
+
+`check` runs those checker regressions, then the actual insertion executable.
+It fails when the implementation violates the contract; a passing checker
+regression does not convert a conformance failure into success. See
+[the observed failure](FINDINGS.md) for a four-insertion reproducer found in
+the current core.
+
+The new unit sources and independent image backend are compiled as
 C99 with the repository warning flags and `-Werror`; core objects keep the
 shared build configuration. These checks validate the tester as well as the
 library, and do not replace its insertion verdicts.

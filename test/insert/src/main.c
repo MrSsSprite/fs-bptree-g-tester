@@ -11,6 +11,7 @@
 
 struct test_group { const char *name; void (*run)(void); };
 static const struct test_group groups[] = {
+    { "empty", test_insert_empty },
     { "permutations", test_insert_permutations },
     { "growth", test_insert_growth },
     { "comparators", test_insert_comparators },
@@ -75,7 +76,7 @@ int main(int argc, char **argv)
             const char *value = argv[++i];
             errno = 0;
             unsigned long long seed = strtoull(value, &end, 0);
-            if (errno || !*value || *value == '-' || *end || seed > UINT64_MAX) {
+            if (errno || *value < '0' || *value > '9' || *end || seed > UINT64_MAX) {
                 fprintf(stderr, "insert: invalid seed: %s\n", value);
                 return EXIT_FAILURE;
             }

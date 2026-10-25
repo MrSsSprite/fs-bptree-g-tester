@@ -4,6 +4,7 @@
 /* -1 runs both, 0 normal pointers, 1 lite pointers. */
 extern int insert_scenario_layout;
 
+void test_insert_empty(void);
 void test_insert_permutations(void);
 void test_insert_growth(void);
 void test_insert_comparators(void);

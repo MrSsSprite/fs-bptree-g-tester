@@ -133,6 +133,39 @@ static _Bool next_permutation(size_t *order, size_t count)
     return 1;
 }
 
+void test_insert_empty(void)
+{
+    for (unsigned lite = 0; lite < 2; lite++) {
+        if (insert_scenario_layout >= 0 && lite != (unsigned)insert_scenario_layout) continue;
+        for (unsigned generated = 0; generated < 2; generated++) {
+            char name[80];
+            struct insert_config config = numeric_config(lite, 128, 8, 0, 4096);
+            struct temp_image_shape shape = {0, NULL, 0};
+            int64_t key = INT64_MIN;
+            unsigned char value[8];
+            snprintf(name, sizeof name, "empty-%s-%u",
+                     generated ? "generated" : "initialized", lite);
+            insert_begin(name, &config);
+            if (generated) insert_generate(&shape);
+            else insert_create();
+            /* Persist and reload a rootless image before its first insert. */
+            insert_check_live();
+            insert_checkpoint(1);
+            value_bytes(value, sizeof value, 44);
+            insert_apply(&key, value);
+            memset(value, 0xcc, sizeof value);
+            insert_check_live();
+            insert_apply(&key, value);
+            insert_checkpoint(1);
+            insert_apply(&key, value);
+            key = INT64_MAX;
+            value_bytes(value, sizeof value, 45);
+            insert_apply(&key, value);
+            insert_finish();
+        }
+    }
+}
+
 void test_insert_permutations(void)
 {
     static const int64_t keys[] = {-2, 0, 5, 17};
