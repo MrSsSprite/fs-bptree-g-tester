@@ -3,7 +3,8 @@
 #include <stddef.h>
 
 /* Small strict JSON reader for manifests. Owns its tree, rejects duplicate
- * object keys, embedded NUL strings and nesting deeper than 64. */
+ * object keys, embedded NUL strings and nesting deeper than 64. Object members
+ * retain input order; duplicate detection uses O(n log n) name comparisons. */
 struct temp_json {
     char type; /* o object, a array, s string, n number, t/f boolean, z null */
     char *name, *text;

@@ -1,9 +1,11 @@
 #define _POSIX_C_SOURCE 200809L
 #include "temp_json.h"
+#include "temp_sort.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <stdint.h>
 
 struct parser { const unsigned char *p, *end, *start; char *error; size_t size; };
 static void bad(struct parser *p, const char *reason)
@@ -92,6 +94,31 @@ void temp_json_free(struct temp_json *j)
 {
     while (j) { struct temp_json *next = j->next; temp_json_free(j->child); free(j->name); free(j->text); free(j); j = next; }
 }
+static int compare_names(const void *lhs, const void *rhs)
+{
+    const struct temp_json *a = lhs, *b = rhs;
+    return strcmp(a->name, b->name);
+}
+static int unique_names(struct parser *p, const struct temp_json *object, size_t count)
+{
+    if (count < 2) return 0;
+    if (count == 2) {
+        if (strcmp(object->child->name, object->child->next->name)) return 0;
+        bad(p, "duplicate object key"); return -1;
+    }
+    if (count > SIZE_MAX / (2 * sizeof(void *))) { bad(p, "object index exceeds address space"); return -1; }
+    const void **index = malloc(2 * count * sizeof *index);
+    if (!index) { bad(p, "out of memory"); return -1; }
+    size_t i = 0;
+    for (const struct temp_json *child = object->child; child; child = child->next) index[i++] = child;
+    temp_sort_index(index, index + count, count, compare_names);
+    int duplicate = 0;
+    for (i = 1; i < count; ++i)
+        if (compare_names(index[i - 1], index[i]) == 0) { duplicate = 1; break; }
+    free(index);
+    if (duplicate) { bad(p, "duplicate object key"); return -1; }
+    return 0;
+}
 static struct temp_json *value(struct parser *p, unsigned depth)
 {
     space(p);
@@ -103,22 +130,25 @@ static struct temp_json *value(struct parser *p, unsigned depth)
         j->type = c == '{' ? 'o' : 'a'; ++p->p; space(p);
         unsigned char end = c == '{' ? '}' : ']';
         struct temp_json **tail = &j->child;
+        size_t count = 0;
         if (p->p < p->end && *p->p == end) { ++p->p; return j; }
         for (;;) {
             char *name = NULL;
             if (j->type == 'o') {
                 name = string(p);
                 if (!name) goto fail;
-                for (const struct temp_json *old = j->child; old; old = old->next)
-                    if (!strcmp(old->name, name)) { free(name); bad(p, "duplicate object key"); goto fail; }
                 space(p);
                 if (p->p == p->end || *p->p++ != ':') { free(name); bad(p, "missing colon"); goto fail; }
             }
             struct temp_json *child = value(p, depth + 1);
             if (!child) { free(name); goto fail; }
-            child->name = name; *tail = child; tail = &child->next;
+            child->name = name; *tail = child; tail = &child->next; ++count;
             space(p);
-            if (p->p < p->end && *p->p == end) { ++p->p; return j; }
+            if (p->p < p->end && *p->p == end) {
+                ++p->p;
+                if (j->type == 'o' && unique_names(p, j, count)) goto fail;
+                return j;
+            }
             if (p->p == p->end || *p->p++ != ',') { bad(p, "missing comma or closing bracket"); goto fail; }
             space(p);
         }
