@@ -6,6 +6,7 @@
 #include <string.h>
 #include "unity.h"
 #include "temp_full.h"
+#include "temp_manifest.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
 #define VERIFY_EXIT_OK    (0)
@@ -41,6 +42,8 @@ static int _preflight_shape(const char *path, unsigned int levels,
 
 int main(int argc, char **argv)
 {
+   for (int i = 1; i < argc; ++i)
+      if (!strcmp(argv[i], "--expect")) return temp_manifest_cli(argc, argv, 0);
    unsigned int lay_cnt = 0;
    int64_t st = 0, interval = 0, key = 0, val = 0;
    _Bool has_lay_cnt = 0, has_st = 0, has_interval = 0;
@@ -229,6 +232,8 @@ static void usage(FILE *stream, const char *prog)
       "usage: %s [--lay-cnt N] [--st S] [--interval I]\n"
       "       [--node-keys PATH=COUNT]... [--key K --val V]\n"
       "       [--expect-height H --expect-nodes N --expect-leaves L] TEMPLATE...\n"
+      "       Manifest mode: --expect FILE IMAGE [--check contents,structure[,shape]]\n"
+      "                     [--comparator-library LIB] [--json]\n"
       "\n"
       "Check pristine fixtures or an image with one inserted record. Missing\n"
       "layout parameters and node occupancies come from the fixture filename.\n"

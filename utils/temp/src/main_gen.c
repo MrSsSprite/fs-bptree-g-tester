@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "temp_full.h"
+#include "temp_manifest.h"
 /*--------------------------- Private Includes END ---------------------------*/
 
 
@@ -33,6 +34,8 @@ static _Bool _parse_i64(const char *str, int64_t *out);
 /*----------------------------------- MAIN -----------------------------------*/
 int main(int argc, char **argv)
 {
+   for (int i = 1; i < argc; ++i)
+      if (!strcmp(argv[i], "--spec")) return temp_manifest_cli(argc, argv, 1);
    const char *dir = NULL;
    _Bool is_lite = 1;
    uint32_t node_size = GEN_NODE_SIZE_DEFAULT;
@@ -115,6 +118,7 @@ static void usage(FILE *stream, const char *prog)
    fprintf(stream,
            "usage: %s [--dir DIR] [--norm] [--node-size N] [--node-keys PATH=COUNT] "
            "LAY_CNT ST INTERVAL\n"
+           "       Manifest mode: --spec FILE --out IMAGE [--comparator-library LIB] [--json]\n"
            "\n"
            "Build, or reuse, a template with full nodes unless overridden.\n"
            "<DIR>/<lay_cnt>-<st>-<interval>[--keys-<overrides>].bptr.\n"

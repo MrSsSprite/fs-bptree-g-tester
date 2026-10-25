@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "layout": {"lite": true, "node_size": 128, "key_size": 3, "value_size": 2},
+  "comparator": {"profile": "bytes-asc"},
+  "initial_shape": {"height": 1, "node_keys": {"root": 2}},
+  "records": [
+    {"key_hex": "000001", "value_hex": "00ff"},
+    {"key_hex": "000100", "value_hex": "f000"}
+  ]
+}
