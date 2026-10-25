@@ -5,8 +5,8 @@
 #include <string.h>
 
 /* Internal stable merge sort of a borrowed-pointer index. scratch has count
- * entries, disjoint from items. Referenced objects are never modified. Unlike
- * implementation-defined qsort strategies, comparison work is O(n log n). */
+ * entries, disjoint from items. Referenced objects are never modified;
+ * comparison work is bounded by O(n log n). */
 static void temp_sort_index(const void **items, const void **scratch, size_t count,
                             int (*compare)(const void *, const void *))
 {

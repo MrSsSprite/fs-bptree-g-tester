@@ -193,6 +193,29 @@ class ManifestTests(unittest.TestCase):
         self.verify(document, encode(document, root))
         self.verify(document, encode(document, root), 1, ("--check", "contents,structure,shape"))
 
+    def test_numeric_shape_paths_and_override_order(self):
+        # Child 10 sorts after child 2 numerically. Keep the root override
+        # between them in input order and verify against a separate encoding.
+        overrides = {"10": 17, "2": 16, "root": 10}
+        overrides.update({str(i): 16 for i in range(10)})
+        records, children = [], []
+        for child in range(11):
+            group = []
+            for _ in range(overrides[str(child)]):
+                i = len(records)
+                pair = (bytes([i]), bytes([(99 - i) % 256]))
+                group.append(pair); records.append(pair)
+            children.append(Node(group))
+        document = spec(records, key_size=1, value_size=1, profile="bytes-asc")
+        document["initial_shape"] = {"height": 2, "node_keys": overrides}
+        expected = encode(document, Node(children=children))
+        for node_keys in (overrides, dict(reversed(list(overrides.items())))):
+            document["initial_shape"]["node_keys"] = node_keys
+            path, _ = self.generate(document)
+            self.assertEqual(path.read_bytes(), expected)
+            self.verify(document, expected, extra=("--check", "contents,structure,shape"))
+            path.unlink()
+
     def test_topology_constraints_independent(self):
         document = spec(pairs(6))
         root = Node(children=[Node(pairs(6)[:3]), Node(pairs(6)[3:])])

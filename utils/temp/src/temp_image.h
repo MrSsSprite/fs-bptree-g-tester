@@ -57,7 +57,9 @@ struct temp_image_constraints {
 };
 
 /* Sparse geometry preflight. Unspecified nodes are full. Rejects nonexistent
- * paths, duplicate overrides, illegal occupancy and unrepresentable output. */
+ * paths, duplicate overrides, illegal occupancy and unrepresentable output.
+ * A temporary sorted index preserves caller order and groups child subtrees;
+ * work depends on override count and path height, not all pairs of overrides. */
 int temp_image_plan(const struct temp_layout *, const struct temp_image_shape *,
                     struct temp_image_stats *, struct temp_image_result *);
 

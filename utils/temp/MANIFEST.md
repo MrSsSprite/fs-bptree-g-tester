@@ -69,6 +69,14 @@ by an ancestor's occupancy. Generation requires the record total to match the
 shape. Post-operation expectations may omit `initial_shape`; original child
 paths need not describe the resulting tree.
 
+Preprocessing uses temporary merge-sorted pointer indexes. JSON object names
+and shape paths are checked for duplicates with O(n log n) comparisons while
+preserving the caller's input order. Numeric shape paths group each child
+subtree into a contiguous range, so planning visits only affected ranges and
+aggregates untouched full subtrees. Generation and exact-shape verification
+reuse the sorted index for binary lookups. Index storage is O(n); neither
+duplicate checking nor child grouping performs pairwise override scans.
+
 Records must be in strict comparator order, with no equivalent keys. Values
 are independent fixed-width byte sequences. The expected stream describes the
 mapping after a checkpoint, not the sequence used to obtain it. The insertion
@@ -172,6 +180,12 @@ linked core-free drivers against independent Python encodings. It covers
 binary widths, sparse trees, legal alternative distributions, empty images,
 free lists, resource limits, corruption, read-only success/failure, plugin
 loading, and interoperability with the legacy library-backed tools.
+
+`check-json` and `check-image` additionally enforce comparison budgets for
+10,000/20,000-member objects and shape override sets. They cover late duplicate
+names (including escaped equivalents), duplicate/nonexistent paths, preserved
+input order, and generation/verification of a 20,000-override fixture. These
+regressions count actual comparisons rather than asserting wall-clock limits.
 
 The new backend requires C99 and POSIX.1-2008 file/dynamic-loader interfaces.
 `DL_LIBS` is linker-probed; override it for cross-compilation. Override

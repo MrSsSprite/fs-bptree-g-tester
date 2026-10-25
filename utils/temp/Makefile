@@ -52,12 +52,17 @@ $(TU_OBJ_DIR)/comparator_plugin.so: tests/comparator_plugin.c src/temp_compare.h
 	$(CC) $(CFLAGS) $(PLUGIN_CFLAGS) $(PLUGIN_LDFLAGS) -Isrc $< -o $@
 
 .PHONY: check-image
-check-image: $(TU_OBJ_DIR)/test_image
+check-image: $(TU_OBJ_DIR)/test_image $(TU_OBJ_DIR)/test_image_index
 	$(TU_OBJ_DIR)/test_image
+	$(TU_OBJ_DIR)/test_image_index
 
-$(TU_OBJ_DIR)/test_image: test/image.c src/temp_image.c src/temp_image.h
+$(TU_OBJ_DIR)/test_image: test/image.c src/temp_image.c src/temp_image.h src/temp_sort.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -Isrc test/image.c src/temp_image.c -o $@
+
+$(TU_OBJ_DIR)/test_image_index: test/image_index.c src/temp_image.c src/temp_image.h src/temp_sort.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -Isrc test/image_index.c -o $@
 
 .PHONY: check-json
 check-json: $(TU_OBJ_DIR)/test_json

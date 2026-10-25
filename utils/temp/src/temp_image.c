@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
 #include "temp_image.h"
+#include "temp_sort.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -59,16 +60,32 @@ static int bounds(const struct temp_layout *l, uint32_t *leaf, uint32_t *branch,
         return fail(r, TEMP_IMAGE_SPEC, "layout", "node cannot hold a leaf record");
     return 0;
 }
-static int prefix(const struct temp_occupancy *o, const uint32_t *path, size_t n)
+struct shape_index {
+    uint32_t height;
+    size_t count;
+    const void **items;
+};
+static int compare_paths(const void *lhs, const void *rhs)
 {
-    return o->depth >= n && (n == 0 || memcmp(o->path, path, n * sizeof *path) == 0);
+    const struct temp_occupancy *a = lhs, *b = rhs;
+    size_t common = a->depth < b->depth ? a->depth : b->depth;
+    if (common && memcmp(a->path, b->path, common * sizeof *a->path))
+        for (size_t i = 0; i < common; ++i)
+            if (a->path[i] != b->path[i]) return a->path[i] < b->path[i] ? -1 : 1;
+    return (a->depth > b->depth) - (a->depth < b->depth);
 }
-static uint32_t shape_keys(const struct temp_image_shape *s, const uint32_t *path,
+static uint32_t shape_keys(const struct shape_index *s, const uint32_t *path,
                            size_t depth, uint32_t full)
 {
-    for (size_t i = 0; i < s->override_count; ++i)
-        if (s->overrides[i].depth == depth && prefix(&s->overrides[i], path, depth))
-            return s->overrides[i].keys;
+    struct temp_occupancy query = {path, depth, 0};
+    size_t low = 0, high = s->count;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        int order = compare_paths(s->items[middle], &query);
+        if (order == 0) return ((const struct temp_occupancy *)s->items[middle])->keys;
+        if (order < 0) low = middle + 1;
+        else high = middle;
+    }
     return full;
 }
 static int accumulate(uint64_t *n, uint64_t value, uint64_t times)
@@ -91,12 +108,18 @@ static int full_counts(uint32_t height, uint32_t leaf, uint32_t branch,
     }
     return 0;
 }
-static int count_shape(const struct temp_image_shape *s, uint32_t *path,
+static int count_shape(const struct shape_index *s, size_t begin, size_t end,
                         uint32_t depth, uint32_t leaf, uint32_t branch,
                         struct temp_image_stats *out)
 {
     uint32_t height = s->height - depth, full = height == 1 ? leaf : branch;
-    uint32_t keys = shape_keys(s, path, depth, full);
+    uint32_t keys = full;
+    /* Parent paths sort before their descendants. Every recursive range is
+     * exactly one subtree, so an override of this node can only be first. */
+    if (begin < end) {
+        const struct temp_occupancy *own = s->items[begin];
+        if (own->depth == depth) { keys = own->keys; ++begin; }
+    }
     uint32_t min = depth == 0 ? 1u : height == 1 ? (leaf + 1u) / 2u : branch / 2u;
     if (keys < min || keys > full) return -1;
     memset(out, 0, sizeof *out);
@@ -104,22 +127,19 @@ static int count_shape(const struct temp_image_shape *s, uint32_t *path,
     if (height == 1) { out->leaves = 1; out->records = keys; return 0; }
     struct temp_image_stats sub = {0};
     uint64_t special = 0;
-    for (size_t i = 0; i < s->override_count; ++i) {
-        const struct temp_occupancy *o = &s->overrides[i];
-        if (o->depth <= depth || !prefix(o, path, depth)) continue;
+    while (begin < end) {
+        const struct temp_occupancy *o = s->items[begin];
         uint32_t child = o->path[depth];
-        int seen = 0;
-        for (size_t j = 0; j < i; ++j)
-            if (s->overrides[j].depth > depth && prefix(&s->overrides[j], path, depth) &&
-                s->overrides[j].path[depth] == child) seen = 1;
-        if (seen) continue;
         if (child > keys) return -1;
-        path[depth] = child;
-        if (count_shape(s, path, depth + 1, leaf, branch, &sub) ||
+        size_t child_end = begin + 1;
+        while (child_end < end &&
+               ((const struct temp_occupancy *)s->items[child_end])->path[depth] == child) ++child_end;
+        if (count_shape(s, begin, child_end, depth + 1, leaf, branch, &sub) ||
             accumulate(&out->nodes, sub.nodes, 1) ||
             accumulate(&out->leaves, sub.leaves, 1) ||
             accumulate(&out->records, sub.records, 1)) return -1;
         ++special;
+        begin = child_end;
     }
     uint64_t remaining = (uint64_t)keys + 1 - special;
     if (remaining && (full_counts(height - 1, leaf, branch, &sub) ||
@@ -128,30 +148,49 @@ static int count_shape(const struct temp_image_shape *s, uint32_t *path,
         accumulate(&out->records, sub.records, remaining))) return -1;
     return 0;
 }
-int temp_image_plan(const struct temp_layout *l, const struct temp_image_shape *s,
-                    struct temp_image_stats *out, struct temp_image_result *r)
+static int prepare_shape(const struct temp_layout *l, const struct temp_image_shape *s,
+                          uint32_t leaf, uint32_t branch, struct shape_index *index,
+                          struct temp_image_stats *out, struct temp_image_result *r)
 {
-    uint32_t leaf, branch, path[MAX_HEIGHT];
-    memset(r, 0, sizeof *r);
     memset(out, 0, sizeof *out);
-    if (bounds(l, &leaf, &branch, r)) return r->status;
     if (s->height > MAX_HEIGHT || (s->override_count && s->overrides == NULL))
         return fail(r, TEMP_IMAGE_SPEC, "shape", "unsupported height or missing overrides");
+    index->height = s->height; index->count = s->override_count;
+    if (index->count > SIZE_MAX / (2 * sizeof *index->items))
+        return fail(r, TEMP_IMAGE_RESOURCE, "allocation", "shape index exceeds address space");
     for (size_t i = 0; i < s->override_count; ++i) {
         const struct temp_occupancy *o = &s->overrides[i];
         if (o->depth >= s->height || (o->depth && o->path == NULL))
             return fail(r, TEMP_IMAGE_SPEC, "shape", "override path exceeds height");
-        for (size_t j = 0; j < i; ++j)
-            if (o->depth == s->overrides[j].depth && prefix(o, s->overrides[j].path, o->depth))
+    }
+    if (index->count) {
+        index->items = malloc(2 * index->count * sizeof *index->items);
+        if (!index->items) return fail(r, TEMP_IMAGE_RESOURCE, "allocation", "cannot allocate shape index");
+        for (size_t i = 0; i < index->count; ++i) index->items[i] = &s->overrides[i];
+        temp_sort_index(index->items, index->items + index->count, index->count, compare_paths);
+        for (size_t i = 1; i < index->count; ++i)
+            if (compare_paths(index->items[i - 1], index->items[i]) == 0)
                 return fail(r, TEMP_IMAGE_SPEC, "shape", "duplicate override path");
     }
-    if (s->height && count_shape(s, path, 0, leaf, branch, out))
+    if (s->height && count_shape(index, 0, index->count, 0, leaf, branch, out))
         return fail(r, TEMP_IMAGE_SPEC, "shape", "illegal occupancy, nonexistent path or count overflow");
     out->height = s->height;
     uint64_t limit = l->is_lite ? UINT32_MAX : UINT64_MAX;
     if (out->nodes > limit || out->nodes >= offset_max() / l->node_size)
         return fail(r, TEMP_IMAGE_SPEC, "extent", "output exceeds node-index or file-offset range");
     return 0;
+}
+int temp_image_plan(const struct temp_layout *l, const struct temp_image_shape *s,
+                    struct temp_image_stats *out, struct temp_image_result *r)
+{
+    struct shape_index index = {0};
+    uint32_t leaf, branch;
+    memset(r, 0, sizeof *r);
+    memset(out, 0, sizeof *out);
+    if (bounds(l, &leaf, &branch, r)) return r->status;
+    prepare_shape(l, s, leaf, branch, &index, out, r);
+    free(index.items);
+    return r->status;
 }
 
 struct reader {
@@ -160,6 +199,7 @@ struct reader {
     const struct temp_records *records;
     const struct temp_order *order;
     const struct temp_image_shape *shape;
+    struct shape_index index;
     struct temp_image_result *result;
     uint32_t ptr, leaf, branch;
     uint64_t blocks, last[MAX_HEIGHT], next[MAX_HEIGHT];
@@ -220,7 +260,7 @@ static int visit(struct reader *v, uint64_t index, uint64_t parent,
         return fail(r, TEMP_IMAGE_INVALID, "siblings", "sibling chain disagrees with child traversal");
     v->last[level] = index;
     v->next[level] = number(metadata + 12 + v->ptr, v->ptr);
-    if (v->shape && keys != shape_keys(v->shape, v->path, depth, maximum))
+    if (v->shape && keys != shape_keys(&v->index, v->path, depth, maximum))
         return fail(r, TEMP_IMAGE_INVALID, "shape", "node occupancy differs from exact fixture");
     size_t key_bytes = (size_t)keys * l->key_size;
     size_t data_bytes = key_bytes + (level ? ((size_t)keys + 1) * v->ptr : (size_t)keys * l->value_size);
@@ -290,11 +330,11 @@ int temp_image_verify(const char *path, const struct temp_layout *l,
         return fail(r, TEMP_IMAGE_SPEC, "callbacks", "missing comparator or record source");
     if (shape) {
         struct temp_image_stats planned;
-        if (temp_image_plan(l, shape, &planned, r)) return r->status;
+        if (prepare_shape(l, shape, v.leaf, v.branch, &v.index, &planned, r)) goto done;
     }
     /* Let fstat reject FIFOs without waiting for a peer during open. */
     v.fd = open(path, O_RDONLY | O_NONBLOCK);
-    if (v.fd < 0) return fail(r, TEMP_IMAGE_IO, "open", "%s", strerror(errno));
+    if (v.fd < 0) { fail(r, TEMP_IMAGE_IO, "open", "%s", strerror(errno)); goto done; }
     if (fstat(v.fd, &st) != 0) { fail(r, TEMP_IMAGE_IO, "stat", "%s", strerror(errno)); goto done; }
     if (!S_ISREG(st.st_mode) || st.st_size < (off_t)l->node_size || st.st_size % l->node_size) {
         fail(r, TEMP_IMAGE_INVALID, "extent", "image must contain complete header/node blocks"); goto done;
@@ -359,6 +399,7 @@ int temp_image_verify(const char *path, const struct temp_layout *l,
         ((constraints->mask & TEMP_EXPECT_LEAVES) && constraints->leaves != r->actual.leaves)))
         fail(r, TEMP_IMAGE_INVALID, "expected-totals", "optional topology expectation mismatch");
 done:
+    free(v.index.items);
     free(v.visited); free(v.previous); free(v.expected_key); free(v.expected_value); free(minimum);
     if (v.fd >= 0 && close(v.fd) && r->status == 0) fail(r, TEMP_IMAGE_IO, "close", "%s", strerror(errno));
     return r->status;
@@ -368,6 +409,7 @@ struct writer {
     int fd;
     const struct temp_layout *layout;
     const struct temp_image_shape *shape;
+    struct shape_index index;
     const struct temp_records *records;
     struct temp_image_result *result;
     uint32_t leaf, branch, ptr, path[MAX_HEIGHT];
@@ -393,7 +435,7 @@ static int build(struct writer *w, uint64_t parent, uint32_t depth,
     const struct temp_layout *l = w->layout;
     struct temp_image_result *r = w->result;
     uint32_t level = w->shape->height - depth - 1;
-    uint32_t keys = shape_keys(w->shape, w->path, depth, level ? w->branch : w->leaf);
+    uint32_t keys = shape_keys(&w->index, w->path, depth, level ? w->branch : w->leaf);
     unsigned char *block = calloc(1, l->node_size), *child_min = malloc(l->key_size);
     unsigned char pointer[8];
     *index = w->next_index++;
@@ -452,16 +494,21 @@ int temp_image_generate(const char *path, const struct temp_layout *l,
     struct writer w = {0};
     unsigned char *buffer = NULL, *key, *value, *previous;
     int created = 0;
-    if (temp_image_plan(l, shape, &planned, r)) return r->status;
-    if (path == NULL || path[0] == '\0')
-        return fail(r, TEMP_IMAGE_SPEC, "path", "missing output path");
-    if (!records || !records->get || !order || !order->compare || records->count != planned.records)
-        return fail(r, TEMP_IMAGE_SPEC, "records", "record source/count does not match requested shape");
+    memset(r, 0, sizeof *r);
+    if (bounds(l, &w.leaf, &w.branch, r)) return r->status;
+    if (prepare_shape(l, shape, w.leaf, w.branch, &w.index, &planned, r)) goto done;
+    if (path == NULL || path[0] == '\0') {
+        fail(r, TEMP_IMAGE_SPEC, "path", "missing output path"); goto done;
+    }
+    if (!records || !records->get || !order || !order->compare || records->count != planned.records) {
+        fail(r, TEMP_IMAGE_SPEC, "records", "record source/count does not match requested shape"); goto done;
+    }
     uint64_t buffer_size = (uint64_t)l->node_size + 2u * l->key_size + l->value_size;
-    if (buffer_size > SIZE_MAX)
-        return fail(r, TEMP_IMAGE_RESOURCE, "allocation", "generation buffers exceed address space");
+    if (buffer_size > SIZE_MAX) {
+        fail(r, TEMP_IMAGE_RESOURCE, "allocation", "generation buffers exceed address space"); goto done;
+    }
     buffer = calloc(1, (size_t)buffer_size);
-    if (!buffer) return fail(r, TEMP_IMAGE_RESOURCE, "allocation", "cannot allocate generation buffers");
+    if (!buffer) { fail(r, TEMP_IMAGE_RESOURCE, "allocation", "cannot allocate generation buffers"); goto done; }
     key = buffer + l->node_size; previous = key + l->key_size; value = previous + l->key_size;
     for (uint64_t i = 0; i < records->count; ++i) {
         r->record = i;
@@ -482,7 +529,6 @@ int temp_image_generate(const char *path, const struct temp_layout *l,
     }
     created = 1; w.layout = l; w.shape = shape; w.records = records; w.result = r;
     w.ptr = l->is_lite ? 4 : 8; w.next_index = 1;
-    bounds(l, &w.leaf, &w.branch, r);
     uint64_t root = 0;
     if (shape->height && build(&w, 0, 0, &root, key)) goto close_output;
     memcpy(buffer, "BPTR", 4); put(buffer + 4, l->is_lite ? 0x80 : 0, 4);
@@ -494,6 +540,7 @@ close_output:
     if (close(w.fd) && r->status == 0) fail(r, TEMP_IMAGE_IO, "close", "%s", strerror(errno));
     if (!r->status) temp_image_verify(path, l, records, order, shape, NULL, r);
 done:
+    free(w.index.items);
     free(buffer);
     if (created && r->status) unlink(path);
     return r->status;
